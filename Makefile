@@ -68,17 +68,17 @@ APPNAMESO=uselib
 endif
 
 ifeq ($(USE_CPP), 1)
-CC=g++
+CC=aarch64-linux-gnu-g++
 else
-CC=gcc
+CC=aarch64-linux-gnu-gcc
 endif
 
-CPP=g++ -std=c++11
+CPP=aarch64-linux-gnu-g++
 NVCC=nvcc
 OPTS=-Ofast
 LDFLAGS= -lm -pthread
 COMMON= -Iinclude/ -I3rdparty/stb/include
-CFLAGS=-Wall -Wfatal-errors -Wno-unused-result -Wno-unknown-pragmas -fPIC
+CFLAGS=-Wall -Wfatal-errors -Wno-unused-result -Wno-unknown-pragmas -fPIC -pg
 
 ifeq ($(DEBUG), 1)
 #OPTS= -O0 -g
