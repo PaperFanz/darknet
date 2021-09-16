@@ -2630,6 +2630,48 @@ void gemm_tt(int M, int N, int K, float ALPHA,
     }
 }
 
+/*** Added Functions for Lab1 ***/
+void get_stats(float *A, int size)
+{
+	float min = FLT_MAX;
+	float max = FLT_MIN;
+	float mean = 0;
+	for (int  i = 0; i < size; i++) {
+		if (A[i] < min) {
+			min = A[i];
+		}
+		if (A[i] > max) {
+			max = A[i];
+		}
+		mean += (A[i]/size);
+	}
+
+	printf("Min: %g, Max: %g, Mean: %g\n", min, max, mean);
+}
+
+int roundup(float fp_number)
+{
+	int	fx_number	=	(int)fp_number;
+
+	if(fp_number-fx_number>=0.5)	fx_number++;
+
+	return	fx_number;
+}
+
+int fp2fx(float fp)
+{
+	int scale = 24;
+	int fx = roundup(fp * (1 << scale));
+	return fx;
+}
+
+int fx2fp(int fx)
+{
+	int scale = 24;
+	float fp = (float)(fx) / (1 << scale);
+	return fp;
+}
+/*** ---End--- ***/
 
 void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
         float *A, int lda,
@@ -2649,28 +2691,32 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
         }
     }
 
-    is_avx();   // initialize static variable
-    if (is_fma_avx2() && !TA && !TB) {
-        gemm_nn_fast(M, N, K, ALPHA, A, lda, B, ldb, C, ldc);
-    }
-    else {
-        int t;
-        #pragma omp parallel for
-        for (t = 0; t < M; ++t) {
-            // TODO call modified gemm_nn_fixed_pt
+    //is_avx();   // initialize static variable
+    //if (is_fma_avx2() && !TA && !TB) {
+    //    gemm_nn_fast(M, N, K, ALPHA, A, lda, B, ldb, C, ldc);
+    //}
+    //else {
+	int t;
+	//#pragma omp parallel for
+	for (t = 0; t < M; ++t) {
+		// TODO call modified gemm_nn_fixed_pt
 
-/*
-            if (!TA && !TB)
-                gemm_nn(1, N, K, ALPHA, A + t*lda, lda, B, ldb, C + t*ldc, ldc);
-            else if (TA && !TB)
-                gemm_tn(1, N, K, ALPHA, A + t, lda, B, ldb, C + t*ldc, ldc);
-            else if (!TA && TB)
-                gemm_nt(1, N, K, ALPHA, A + t*lda, lda, B, ldb, C + t*ldc, ldc);
-            else
-                gemm_tt(1, N, K, ALPHA, A + t, lda, B, ldb, C + t*ldc, ldc);
-*/
-        }
-    }
+
+		if (!TA && !TB)
+			gemm_nn(1, N, K, ALPHA, A + t*lda, lda, B, ldb, C + t*ldc, ldc);
+		else if (TA && !TB)
+			gemm_tn(1, N, K, ALPHA, A + t, lda, B, ldb, C + t*ldc, ldc);
+		else if (!TA && TB)
+			gemm_nt(1, N, K, ALPHA, A + t*lda, lda, B, ldb, C + t*ldc, ldc);
+		else
+			gemm_tt(1, N, K, ALPHA, A + t, lda, B, ldb, C + t*ldc, ldc);
+
+	}
+    //}
+
+	get_stats(A, M * K);
+	get_stats(B, K * N);
+	get_stats(C, M * N);
 }
 
 #ifdef GPU
