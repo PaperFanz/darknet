@@ -2658,18 +2658,38 @@ int roundup(float fp_number)
 	return	fx_number;
 }
 
-int fp2fx(float fp)
+static inline int fp2fx(float fp)
 {
-	int scale = 24;
-	int fx = roundup(fp * (1 << scale));
-	return fx;
+	int scale = 8;
+	return roundup(fp * (1 << scale));
 }
 
-int fx2fp(int fx)
+static inline float fx2fp(int fx)
 {
-	int scale = 24;
-	float fp = (float)(fx) / (1 << scale);
-	return fp;
+	int scale = 8;
+	return (float)(fx) / (1 << scale);
+}
+
+void gemm_nn_fx(int M, int N, int K, float ALPHA,
+    float *A, int lda,
+    float *B, int ldb,
+    float *C, int ldc)
+{
+	int alpha = fp2fx(ALPHA);
+	
+	//printf("\nFP alpha: %g, FX alpha: %d\n\n", ALPHA, alpha);
+
+	//float fp = 0.213;
+	//printf("======FP Res: %g, FX Res: %g======\n", fp * 500, fx2fp(fp2fx(fp) * 500));
+    int i, j, k;
+    for (i = 0; i < M; ++i) {
+        for (k = 0; k < K; ++k) {
+            PUT_IN_REGISTER int A_PART = alpha * fp2fx(A[i * lda + k]);
+            for (j = 0; j < N; ++j) {
+                C[i*ldc + j] += fx2fp(A_PART * fp2fx(B[k*ldb + j]));
+            }
+        }
+    }
 }
 /*** ---End--- ***/
 
@@ -2680,6 +2700,7 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
         float *C, int ldc)
 {
     // TODO convert A, B, C, ALPHA to fixed point
+	
 
     //printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
     if (BETA != 1){
@@ -2704,6 +2725,7 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
 
 		if (!TA && !TB)
 			gemm_nn(1, N, K, ALPHA, A + t*lda, lda, B, ldb, C + t*ldc, ldc);
+			//gemm_nn_fx(1, N, K, ALPHA, A + t*lda, lda, B, ldb, C + t*ldc, ldc);
 		else if (TA && !TB)
 			gemm_tn(1, N, K, ALPHA, A + t, lda, B, ldb, C + t*ldc, ldc);
 		else if (!TA && TB)
@@ -2714,8 +2736,11 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
 	}
     //}
 
+	printf("[A]");
 	get_stats(A, M * K);
+	printf("[B]");
 	get_stats(B, K * N);
+	printf("[C]");
 	get_stats(C, M * N);
 }
 
