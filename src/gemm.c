@@ -2671,9 +2671,7 @@ static inline fx_t fx_mul_dopt(fx_t a, uint8_t ashf, fx_t b, uint8_t bshf)
 
 static inline fx_t roundup(float fp_number)
 {
-    fx_t fx_number = (fx_t) fp_number;
-    if(fp_number-fx_number>=0.5) ++fx_number;
-    return fx_number;
+    return (fx_t)fp_number;
 }
 
 static inline fx_t fp2fx(float fp)
