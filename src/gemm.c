@@ -2652,7 +2652,7 @@ void get_stats(float *A, int size)
 
 /* make it a little easier to play with different int sizes and scales */
 typedef int32_t fx_t;
-#define FXFP_SCALE 14
+#define FXFP_SCALE 17
 
 static inline fx_t fx_mul(fx_t a, fx_t b)
 {
@@ -2678,7 +2678,7 @@ static inline fx_t roundup(float fp_number)
 
 static inline fx_t fp2fx(float fp)
 {
-    return roundup(fp*((fx_t)1 << FXFP_SCALE));
+    return fp*((fx_t)1 << FXFP_SCALE);
 }
 
 static inline float fx2fp(fx_t fx)
@@ -2702,6 +2702,7 @@ void fx2fparr(float* ret, fx_t* arr, size_t n)
     for (i = 0; i < n; ++i) {
         ret[i] = fx2fp(arr[i]);
     }
+	free(arr);
 }
 
 void gemm_nn_fx(int M, int N, int K, fx_t ALPHA,
@@ -2714,7 +2715,7 @@ void gemm_nn_fx(int M, int N, int K, fx_t ALPHA,
         for (k = 0; k < K; ++k) {
             PUT_IN_REGISTER fx_t A_PART = fx_mul_opt(ALPHA, 14, A[i * lda + k]);
             for (j = 0; j < N; ++j) {
-                C[i*ldc + j] += fx_mul_dopt(A_PART, 3, B[k*ldb + j], 3);
+                C[i*ldc + j] += fx_mul_dopt(A_PART, 3, B[k*ldb + j], 5);
             }
         }
     }
@@ -2736,6 +2737,7 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
     printf("[C]");
     get_stats(C, M * N);
     */
+	
 
     fx_t alpha = fp2fx(ALPHA);
     fx_t beta = fp2fx(BETA);
@@ -2745,7 +2747,7 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
 
     // printf("fx_mul test: %g * %g = %g\n", 3.1415, 1.2345, fx2fp(fx_mul(fp2fx(3.1415), fp2fx(1.2345))));
 
-    // printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
+    //printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
     // printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, fx2fp(fp2fx(ALPHA)), lda, ldb, fx2fp(fp2fx(BETA)), ldc);
 
     if (beta != fp2fx(1.0)){
