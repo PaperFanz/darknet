@@ -7,6 +7,7 @@
 #include <math.h>
 #include <float.h>
 #include <string.h>
+#include <stddef.h>
 #include <stdint.h>
 #if defined(_OPENMP)
 #include <omp.h>
@@ -2649,44 +2650,61 @@ void get_stats(float *A, int size)
 	printf("Min: %g, Max: %g, Mean: %g\n", min, max, mean);
 }
 
-int roundup(float fp_number)
+/* make it a little easier to play with different int sizes and scales */
+typedef int64_t fx_t;
+#define FXFP_SCALE 16
+
+static inline fx_t fx_mul(fx_t a, fx_t b)
 {
-	int	fx_number	=	(int)fp_number;
-
-	if(fp_number-fx_number>=0.5)	fx_number++;
-
-	return	fx_number;
+    return ((a*b)>>FXFP_SCALE);
 }
 
-static inline int fp2fx(float fp)
+static inline fx_t roundup(float fp_number)
 {
-	int scale = 8;
-	return roundup(fp * (1 << scale));
+    fx_t fx_number = (fx_t) fp_number;
+    if(fp_number-fx_number>=0.5) ++fx_number;
+    return fx_number;
 }
 
-static inline float fx2fp(int fx)
+static inline fx_t fp2fx(float fp)
 {
-	int scale = 8;
-	return (float)(fx) / (1 << scale);
+    return roundup(fp*((fx_t)1 << FXFP_SCALE));
 }
 
-void gemm_nn_fx(int M, int N, int K, float ALPHA,
-    float *A, int lda,
-    float *B, int ldb,
-    float *C, int ldc)
+static inline float fx2fp(fx_t fx)
 {
-	int alpha = fp2fx(ALPHA);
-	
-	//printf("\nFP alpha: %g, FX alpha: %d\n\n", ALPHA, alpha);
+    return (float) (fx)/((fx_t)1 << FXFP_SCALE);
+}
 
-	//float fp = 0.213;
-	//printf("======FP Res: %g, FX Res: %g======\n", fp * 500, fx2fp(fp2fx(fp) * 500));
+fx_t * fp2fxarr(float* arr, size_t n)
+{
+    fx_t * fx = (fx_t *) xcalloc(n, sizeof(fx_t));
+    size_t i;
+    for (i = 0; i < n; ++i) {
+        fx[i] = fp2fx(arr[i]);
+    }
+    return fx;
+}
+
+void fx2fparr(float* ret, fx_t* arr, size_t n)
+{
+    size_t i;
+    for (i = 0; i < n; ++i) {
+        ret[i] = fx2fp(arr[i]);
+    }
+}
+
+void gemm_nn_fx(int M, int N, int K, fx_t ALPHA,
+    fx_t *A, int lda,
+    fx_t *B, int ldb,
+    fx_t *C, int ldc)
+{
     int i, j, k;
     for (i = 0; i < M; ++i) {
         for (k = 0; k < K; ++k) {
-            PUT_IN_REGISTER int A_PART = alpha * fp2fx(A[i * lda + k]);
+            PUT_IN_REGISTER fx_t A_PART = fx_mul(ALPHA, A[i * lda + k]);
             for (j = 0; j < N; ++j) {
-                C[i*ldc + j] += fx2fp(A_PART * fp2fx(B[k*ldb + j]));
+                C[i*ldc + j] += fx_mul(A_PART, B[k*ldb + j]);
             }
         }
     }
@@ -2699,49 +2717,56 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
         float BETA,
         float *C, int ldc)
 {
-    // TODO convert A, B, C, ALPHA to fixed point
-	
+    /*
+    printf("\n\nPRE GEMM:\n");
+    printf("[A]");
+    get_stats(A, M * K);
+    printf("[B]");
+    get_stats(B, K * N);
+    printf("[C]");
+    get_stats(C, M * N);
+    */
 
-    //printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
-    if (BETA != 1){
+    fx_t alpha = fp2fx(ALPHA);
+    fx_t beta = fp2fx(BETA);
+    fx_t * a = fp2fxarr(A, M*K);
+    fx_t * b = fp2fxarr(B, K*N);
+    fx_t * c = fp2fxarr(C, M*N);
+
+    // printf("fx_mul test: %g * %g = %g\n", 3.1415, 1.2345, fx2fp(fx_mul(fp2fx(3.1415), fp2fx(1.2345))));
+
+    // printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
+    // printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, fx2fp(fp2fx(ALPHA)), lda, ldb, fx2fp(fp2fx(BETA)), ldc);
+
+    if (beta != fp2fx(1.0)){
         int i, j;
         for(i = 0; i < M; ++i){
             for(j = 0; j < N; ++j){
-                C[i*ldc + j] *= BETA;
+                c[i*ldc + j] = fx_mul(c[i*ldc + j], beta);
             }
         }
     }
 
-    //is_avx();   // initialize static variable
-    //if (is_fma_avx2() && !TA && !TB) {
-    //    gemm_nn_fast(M, N, K, ALPHA, A, lda, B, ldb, C, ldc);
-    //}
-    //else {
-	int t;
-	//#pragma omp parallel for
-	for (t = 0; t < M; ++t) {
-		// TODO call modified gemm_nn_fixed_pt
+    int t;
+    // #pragma omp parallel for
+    for (t = 0; t < M; ++t) {
+        // TODO call modified gemm_nn_fixed_pt
+        gemm_nn_fx(1, N, K, alpha, a + t*lda, lda, b, ldb, c + t*ldc, ldc);
+    }
+    
+    fx2fparr(A, a, M*K);
+    fx2fparr(B, b, K*N);
+    fx2fparr(C, c, M*N);
 
-
-		if (!TA && !TB)
-			gemm_nn(1, N, K, ALPHA, A + t*lda, lda, B, ldb, C + t*ldc, ldc);
-			//gemm_nn_fx(1, N, K, ALPHA, A + t*lda, lda, B, ldb, C + t*ldc, ldc);
-		else if (TA && !TB)
-			gemm_tn(1, N, K, ALPHA, A + t, lda, B, ldb, C + t*ldc, ldc);
-		else if (!TA && TB)
-			gemm_nt(1, N, K, ALPHA, A + t*lda, lda, B, ldb, C + t*ldc, ldc);
-		else
-			gemm_tt(1, N, K, ALPHA, A + t, lda, B, ldb, C + t*ldc, ldc);
-
-	}
-    //}
-
-	printf("[A]");
-	get_stats(A, M * K);
-	printf("[B]");
-	get_stats(B, K * N);
-	printf("[C]");
-	get_stats(C, M * N);
+    /*
+    printf("\n\nPOST GEMM:\n");
+    printf("[A]");
+    get_stats(A, M * K);
+    printf("[B]");
+    get_stats(B, K * N);
+    printf("[C]");
+    get_stats(C, M * N);
+    */
 }
 
 #ifdef GPU
