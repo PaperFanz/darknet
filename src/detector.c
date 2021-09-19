@@ -1276,7 +1276,8 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
 
 
     double mean_average_precision = 0;
-
+	
+	int unique_classes = 0;
     for (i = 0; i < classes; ++i) {
         double avg_precision = 0;
 
@@ -1328,6 +1329,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
             }
             avg_precision = avg_precision / map_points;
         }
+		if(avg_precision) unique_classes++;
 
         printf("class_id = %d, name = %s, ap = %2.2f%%   \t (TP = %d, FP = %d) \n",
             i, names[i], avg_precision * 100, tp_for_thresh_per_class[i], fp_for_thresh_per_class[i]);
@@ -1348,12 +1350,14 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     printf(" for conf_thresh = %0.2f, TP = %d, FP = %d, FN = %d, average IoU = %2.2f %% \n",
         thresh_calc_avg_iou, tp_for_thresh, fp_for_thresh, unique_truth_count - tp_for_thresh, avg_iou * 100);
 
-    mean_average_precision = mean_average_precision / classes;
+    // mean_average_precision = mean_average_precision / classes;
+    mean_average_precision = mean_average_precision / unique_classes;
     printf("\n IoU threshold = %2.0f %%, ", iou_thresh * 100);
     if (map_points) printf("used %d Recall-points \n", map_points);
     else printf("used Area-Under-Curve for each unique Recall \n");
 
-    printf(" mean average precision (mAP@%0.2f) = %f, or %2.2f %% \n", iou_thresh, mean_average_precision, mean_average_precision * 100);
+    // printf(" mean average precision (mAP@%0.2f) = %f, or %2.2f %% \n", iou_thresh, mean_average_precision, mean_average_precision * 100);
+	printf("\n mean average precision (mAP) = %f, or %2.2f %% (%d classes)\n", mean_average_precision, mean_average_precision*100, unique_classes);
 
     for (i = 0; i < classes; ++i) {
         free(pr[i]);
