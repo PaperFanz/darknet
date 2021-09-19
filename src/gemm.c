@@ -2652,7 +2652,7 @@ void get_stats(float *A, int size)
 
 /* make it a little easier to play with different int sizes and scales */
 typedef int32_t fx_t;
-#define FXFP_SCALE 14
+#define FXFP_SCALE 17
 
 static inline fx_t fx_mul(fx_t a, fx_t b)
 {
@@ -2668,6 +2668,8 @@ static inline fx_t fx_mul_dopt(fx_t a, uint8_t ashf, fx_t b, uint8_t bshf)
 {
     return ((a >> ashf) * (b >> bshf)) >> (FXFP_SCALE - ashf - bshf);
 }
+
+#define FX_MUL_DOPT(a, ashf, b, bshf) (((a >> ashf) * (b >> bshf)) >> (FXFP_SCALE - ashf - bshf))
 
 static inline fx_t roundup(float fp_number)
 {
@@ -2700,6 +2702,7 @@ void fx2fparr(float* ret, fx_t* arr, size_t n)
     for (i = 0; i < n; ++i) {
         ret[i] = fx2fp(arr[i]);
     }
+    free(arr);
 }
 
 void gemm_nn_fx(int M, int N, int K, fx_t ALPHA,
@@ -2712,7 +2715,7 @@ void gemm_nn_fx(int M, int N, int K, fx_t ALPHA,
         for (k = 0; k < K; ++k) {
             PUT_IN_REGISTER fx_t A_PART = fx_mul_opt(ALPHA, 14, A[i * lda + k]);
             for (j = 0; j < N; ++j) {
-                C[i*ldc + j] += fx_mul_dopt(A_PART, 3, B[k*ldb + j], 3);
+                C[i*ldc + j] += FX_MUL_DOPT(A_PART, 3, B[k*ldb + j], 5);
             }
         }
     }

@@ -68,15 +68,12 @@ APPNAMESO=uselib
 endif
 
 ifeq ($(USE_CPP), 1)
-#CC=aarch64-linux-gnu-g++
-CC=g++
+CC=aarch64-linux-gnu-g++
 else
-#CC=aarch64-linux-gnu-gcc
-CC=gcc
+CC=aarch64-linux-gnu-gcc
 endif
 
-#CPP=aarch64-linux-gnu-g++
-CPP=g++
+CPP=aarch64-linux-gnu-g++
 NVCC=nvcc
 OPTS=-Ofast
 LDFLAGS= -lm -pthread
