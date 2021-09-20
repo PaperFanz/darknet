@@ -6,6 +6,7 @@
 #include "blas.h"
 #include "gemm.h"
 #include "box.h"
+#include "fx.h"
 #include <stdio.h>
 #include <time.h>
 
@@ -1206,6 +1207,101 @@ size_t binary_transpose_align_input(int k, int n, float *b, char **t_bit_input, 
     return t_intput_size;
 }
 
+void forward_convolutional_layer_simplified(convolutional_layer l, network_state state, fx_t a, fx_t b, fx_t c)
+{
+    int out_h = convolutional_out_height(l);
+    int out_w = convolutional_out_width(l);
+    int i, j;
+
+    fill_cpu(l.outputs*l.batch, 0, l.output, 1);
+
+    if (l.xnor && (!l.align_bit_weights || state.train)) {
+        if (!l.align_bit_weights || state.train) {
+            binarize_weights(l.weights, l.n, l.nweights, l.binary_weights);
+            //printf("\n binarize_weights l.align_bit_weights = %p \n", l.align_bit_weights);
+        }
+        swap_binary(&l);
+        binarize_cpu(state.input, l.c*l.h*l.w*l.batch, l.binary_input);
+        state.input = l.binary_input;
+    }
+
+    int m = l.n / l.groups;
+    int k = l.size*l.size*l.c / l.groups;
+    int n = out_h*out_w;
+
+    static int u = 0;
+    u++;
+
+    for(i = 0; i < l.batch; ++i)
+    {
+        for (j = 0; j < l.groups; ++j)
+        {
+            float *a = l.weights +j*l.nweights / l.groups;
+            float *b = state.workspace;
+            float *c = l.output +(i*l.groups + j)*n*m;
+
+            //gemm(0,0,m,n,k,1,a,k,b,n,1,c,n);
+            //gemm_nn_custom(m, n, k, 1, a, k, b, n, c, n);
+
+            //printf(" l.index = %d - FP32 \n", l.index);
+            float *im = state.input + (i*l.groups + j)*(l.c / l.groups)*l.h*l.w;
+            if (l.size == 1 && l.stride == 1 && l.dilation == 1) {
+                printf("=======Got here to set b = im==========\n");
+                b = im;
+            }
+            else {
+                //im2col_cpu(im, l.c / l.groups, l.h, l.w, l.size, l.stride, l.pad, b);
+
+                im2col_cpu_ext(im,   // input
+                    l.c / l.groups,     // input channels
+                    l.h, l.w,           // input size (h, w)
+                    l.size, l.size,     // kernel size (h, w)
+                    l.pad * l.dilation, l.pad * l.dilation,       // padding (h, w)
+                    l.stride_y, l.stride_x, // stride (h, w)
+                    l.dilation, l.dilation, // dilation (h, w)
+                    b);                 // output
+
+            }
+
+            gemm(0, 0, m, n, k, 1, a, k, b, n, 1, c, n);
+            // bit-count to float
+        }
+    }
+
+    if(l.batch_normalize){
+        forward_batchnorm_layer(l, state);
+    }
+    else {
+        add_bias(l.output, l.biases, l.batch, l.n, out_h*out_w);
+    }
+
+    //activate_array(l.output, m*n*l.batch, l.activation);
+    if (l.activation == SWISH) activate_array_swish(l.output, l.outputs*l.batch, l.activation_input, l.output);
+    else if (l.activation == MISH) activate_array_mish(l.output, l.outputs*l.batch, l.activation_input, l.output);
+    else if (l.activation == HARD_MISH) activate_array_hard_mish(l.output, l.outputs*l.batch, l.activation_input, l.output);
+    else if (l.activation == NORM_CHAN) activate_array_normalize_channels(l.output, l.outputs*l.batch, l.batch, l.out_c, l.out_w*l.out_h, l.output);
+    else if (l.activation == NORM_CHAN_SOFTMAX) activate_array_normalize_channels_softmax(l.output, l.outputs*l.batch, l.batch, l.out_c, l.out_w*l.out_h, l.output, 0);
+    else if (l.activation == NORM_CHAN_SOFTMAX_MAXVAL) activate_array_normalize_channels_softmax(l.output, l.outputs*l.batch, l.batch, l.out_c, l.out_w*l.out_h, l.output, 1);
+    else activate_array_cpu_custom(l.output, l.outputs*l.batch, l.activation);
+
+    if(l.binary || l.xnor) swap_binary(&l);
+
+    //visualize_convolutional_layer(l, "conv_visual", NULL);
+    //wait_until_press_key_cv();
+
+    if(l.assisted_excitation && state.train) assisted_excitation_forward(l, state);
+
+    if (l.antialiasing) {
+        network_state s = { 0 };
+        s.train = state.train;
+        s.workspace = state.workspace;
+        s.net = state.net;
+        s.input = l.output;
+        forward_convolutional_layer_simple(*(l.input_layer), s, a, b, c);
+        //simple_copy_ongpu(l.outputs*l.batch, l.output, l.input_antialiasing);
+        memcpy(l.output, l.input_layer->output, l.input_layer->outputs * l.input_layer->batch * sizeof(float));
+    }
+}
 
 void forward_convolutional_layer(convolutional_layer l, network_state state)
 {
@@ -1369,7 +1465,8 @@ void forward_convolutional_layer(convolutional_layer l, network_state state)
                 //printf(" l.index = %d - FP32 \n", l.index);
                 float *im = state.input + (i*l.groups + j)*(l.c / l.groups)*l.h*l.w;
                 if (l.size == 1 && l.stride == 1 && l.dilation == 1) {
-                    b = im;
+                    printf("=======Got here to set b = im==========\n");
+					b = im;
                 }
                 else {
                     //im2col_cpu(im, l.c / l.groups, l.h, l.w, l.size, l.stride, l.pad, b);

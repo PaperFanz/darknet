@@ -270,6 +270,8 @@ void forward_network(network net, network_state state)
 {
     state.workspace = net.workspace;
     int i;
+	printf("=====================\n");
+	printf("=====================\n");
     for(i = 0; i < net.n; ++i){
         state.index = i;
         layer l = net.layers[i];
