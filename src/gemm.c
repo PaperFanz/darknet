@@ -2664,10 +2664,14 @@ static inline fx_t fx_mul_opt(fx_t a, uint8_t ashf, fx_t b)
     return ((a >> ashf) * (b >> (FXFP_SCALE - ashf)));
 }
 
+#define FX_MUL_OPT(a, ashf, b) (((a >> ashf) * (b >> (FXFP_SCALE - ashf))))
+
 static inline fx_t fx_mul_dopt(fx_t a, uint8_t ashf, fx_t b, uint8_t bshf)
 {
     return ((a >> ashf) * (b >> bshf)) >> (FXFP_SCALE - ashf - bshf);
 }
+
+#define FX_MUL_DOPT(a, ashf, b, bshf) (((a >> ashf) * (b >> bshf)) >> (FXFP_SCALE - ashf - bshf))
 
 static inline fx_t roundup(float fp_number)
 {
@@ -2678,28 +2682,36 @@ static inline fx_t fp2fx(float fp)
 {
     return fp*((fx_t)1 << FXFP_SCALE);
 }
+#define FP2FX(fp) (fx_t)((fp)*((fx_t)1 << FXFP_SCALE))
 
 static inline float fx2fp(fx_t fx)
 {
     return (float) (fx)/((fx_t)1 << FXFP_SCALE);
 }
+#define FX2FP(fx) ((float)(fx)/((fx_t)1 << FXFP_SCALE))
 
 fx_t * fp2fxarr(float* arr, size_t n)
 {
     fx_t * fx = (fx_t *) xcalloc(n, sizeof(fx_t));
     size_t i;
+	float temp;
     for (i = 0; i < n; ++i) {
-        fx[i] = fp2fx(arr[i]);
+        temp = arr[i];
+		fx[i] = FP2FX(temp);
     }
+	//printf("CHECK fx[0]: %d\n", fx[0]);
     return fx;
 }
 
 void fx2fparr(float* ret, fx_t* arr, size_t n)
 {
     size_t i;
+	fx_t temp;
     for (i = 0; i < n; ++i) {
-        ret[i] = fx2fp(arr[i]);
+        temp = arr[i];
+		ret[i] = FX2FP(temp);
     }
+	//printf("CHECK fp[0]: %g\n", ret[0]);
 	free(arr);
 }
 
@@ -2711,10 +2723,10 @@ void gemm_nn_fx(int M, int N, int K, fx_t ALPHA,
     int i, j, k;
     for (i = 0; i < M; ++i) {
         for (k = 0; k < K; ++k) {
-            PUT_IN_REGISTER fx_t A_PART = fx_mul_opt(ALPHA, 14, A[i * lda + k]);
+            PUT_IN_REGISTER fx_t A_PART = FX_MUL_OPT(ALPHA, 14, A[i * lda + k]);
             for (j = 0; j < N; ++j) {
-                C[i*ldc + j] += fx_mul_dopt(A_PART, 3, B[k*ldb + j], 5);
-            }
+            	C[i*ldc + j] += FX_MUL_DOPT(A_PART, 3, B[k*ldb + j], 5);
+			}
         }
     }
 }
@@ -2737,8 +2749,8 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
     */
 	
 
-    fx_t alpha = fp2fx(ALPHA);
-    fx_t beta = fp2fx(BETA);
+    fx_t alpha = FP2FX(ALPHA);
+    fx_t beta = FP2FX(BETA);
     fx_t * a = fp2fxarr(A, M*K);
     fx_t * b = fp2fxarr(B, K*N);
     fx_t * c = fp2fxarr(C, M*N);
@@ -2748,11 +2760,11 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
     //printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
     // printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, fx2fp(fp2fx(ALPHA)), lda, ldb, fx2fp(fp2fx(BETA)), ldc);
 
-    if (beta != fp2fx(1.0)){
+    if (beta != 1){
         int i, j;
         for(i = 0; i < M; ++i){
             for(j = 0; j < N; ++j){
-                c[i*ldc + j] = fx_mul_opt(beta, 14, c[i*ldc + j]);
+                c[i*ldc + j] = FX_MUL_OPT(beta, 14, c[i*ldc + j]);
             }
         }
     }
