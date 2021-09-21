@@ -1,0 +1,102 @@
+ GPU isn't used 
+mini_batch = 1, batch = 1, time_steps = 1, train = 0 
+
+ seen 64, trained: 32013 K-images (500 Kilo-batches_64) 
+
+ calculation mAP (mean average precision)...
+ Detection layer: 16 - type = 28 
+ Detection layer: 23 - type = 28 
+
+ detections_count = 75, unique_truth_count = 4  
+ rank = 0 of ranks = 75 class_id = 0, name = person, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 1, name = bicycle, ap = 100.00%   	 (TP = 1, FP = 0) 
+class_id = 2, name = car, ap = 100.00%   	 (TP = 1, FP = 1) 
+class_id = 3, name = motorbike, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 4, name = aeroplane, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 5, name = bus, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 6, name = train, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 7, name = truck, ap = 100.00%   	 (TP = 1, FP = 1) 
+class_id = 8, name = boat, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 9, name = traffic light, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 10, name = fire hydrant, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 11, name = stop sign, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 12, name = parking meter, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 13, name = bench, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 14, name = bird, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 15, name = cat, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 16, name = dog, ap = 100.00%   	 (TP = 1, FP = 0) 
+class_id = 17, name = horse, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 18, name = sheep, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 19, name = cow, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 20, name = elephant, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 21, name = bear, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 22, name = zebra, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 23, name = giraffe, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 24, name = backpack, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 25, name = umbrella, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 26, name = handbag, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 27, name = tie, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 28, name = suitcase, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 29, name = frisbee, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 30, name = skis, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 31, name = snowboard, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 32, name = sports ball, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 33, name = kite, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 34, name = baseball bat, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 35, name = baseball glove, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 36, name = skateboard, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 37, name = surfboard, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 38, name = tennis racket, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 39, name = bottle, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 40, name = wine glass, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 41, name = cup, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 42, name = fork, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 43, name = knife, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 44, name = spoon, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 45, name = bowl, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 46, name = banana, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 47, name = apple, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 48, name = sandwich, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 49, name = orange, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 50, name = broccoli, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 51, name = carrot, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 52, name = hot dog, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 53, name = pizza, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 54, name = donut, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 55, name = cake, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 56, name = chair, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 57, name = sofa, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 58, name = pottedplant, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 59, name = bed, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 60, name = diningtable, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 61, name = toilet, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 62, name = tvmonitor, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 63, name = laptop, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 64, name = mouse, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 65, name = remote, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 66, name = keyboard, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 67, name = cell phone, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 68, name = microwave, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 69, name = oven, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 70, name = toaster, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 71, name = sink, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 72, name = refrigerator, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 73, name = book, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 74, name = clock, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 75, name = vase, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 76, name = scissors, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 77, name = teddy bear, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 78, name = hair drier, ap = 0.00%   	 (TP = 0, FP = 0) 
+class_id = 79, name = toothbrush, ap = 0.00%   	 (TP = 0, FP = 0) 
+
+ for conf_thresh = 0.25, precision = 0.67, recall = 1.00, F1-score = 0.80 
+ for conf_thresh = 0.25, TP = 4, FP = 2, FN = 0, average IoU = 65.90 % 
+
+ IoU threshold = 50 %, used Area-Under-Curve for each unique Recall 
+
+ mean average precision (mAP) = 1.000000, or 100.00 % (4 classes)
+
+Set -points flag:
+ `-points 101` for MS COCO 
+ `-points 11` for PascalVOC 2007 (uncomment `difficult` in voc.data) 
+ `-points 0` (AUC) for ImageNet, PascalVOC 2010-2012, your custom dataset
