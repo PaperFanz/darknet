@@ -1,3 +1,18 @@
+# FOR ECE 382M
+
+Team: Pete Fan, Jordon Kashanchi, Melissa Yang
+
+## Building
+
+We added several compilation options to the top of the [Makefile](Makefile) to streamline the building process for x86 and ARM.
+
+Set `ARM_CC=1` to build for ARM, `0` to build for x86.
+Set `PG=1` to add `-pg` to the compile flags;
+
+Finally, `make clean` and `make` will build the repository. The `darknet` binary can then be run using the same commands as the unmodified version from AlexeyAB.
+
+---
+
 # Yolo v4, v3 and v2 for Windows and Linux
 
 ## (neural networks for object detection)

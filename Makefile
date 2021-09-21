@@ -7,6 +7,8 @@ OPENMP=0
 LIBSO=0
 ZED_CAMERA=0
 ZED_CAMERA_v2_8=0
+ARM_CC=0
+PG=0
 
 # set GPU=1 and CUDNN=1 to speedup on GPU
 # set CUDNN_HALF=1 to further speedup 3 x times (Mixed-precision on Tensor Cores) GPU: Volta, Xavier, Turing and higher
@@ -67,18 +69,31 @@ LIBNAMESO=libdarknet.so
 APPNAMESO=uselib
 endif
 
-ifeq ($(USE_CPP), 1)
-CC=aarch64-linux-gnu-g++
+ifeq ($(ARM_CC), 1)
+    ifeq ($(USE_CPP), 1)
+	CC=aarch64-linux-gnu-g++
+    else
+	CC=aarch64-linux-gnu-gcc
+    endif
+    CPP=aarch64-linux-gnu-g++
 else
-CC=aarch64-linux-gnu-gcc
+    ifeq ($(USE_CPP), 1)
+	CC=g++
+    else
+	CC=gcc
+    endif
+    CPP=g++
 endif
 
-CPP=aarch64-linux-gnu-g++
 NVCC=nvcc
 OPTS=-Ofast
 LDFLAGS= -lm -pthread
 COMMON= -Iinclude/ -I3rdparty/stb/include
-CFLAGS=-Wall -Wfatal-errors -Wno-unused-result -Wno-unknown-pragmas -fPIC -pg
+CFLAGS=-Wall -Wfatal-errors -Wno-unused-result -Wno-unknown-pragmas -fPIC
+
+ifeq ($(PG), 1)
+CFLAGS+= -pg
+endif
 
 ifeq ($(DEBUG), 1)
 #OPTS= -O0 -g
@@ -197,3 +212,4 @@ setchmod:
 
 clean:
 	rm -rf $(OBJS) $(EXEC) $(LIBNAMESO) $(APPNAMESO)
+

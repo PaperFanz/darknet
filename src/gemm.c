@@ -2651,18 +2651,26 @@ void get_stats(float *A, int size)
 }
 
 /* make it a little easier to play with different int sizes and scales */
-typedef int32_t fx_t;
+typedef int_fast32_t fx_t;
 #define FXFP_SCALE 17
+
+/* modified from https://github.com/flame/how-to-optimize-gemm/wiki */
+#define A(i,j) a[ (i)*lda + (j) ]
+#define B(i,j) b[ (i)*ldb + (j) ]
+#define C(i,j) c[ (i)*ldc + (j) ]
+
 
 static inline fx_t fx_mul(fx_t a, fx_t b)
 {
-    return (((int64_t)a*b)>>FXFP_SCALE);
+    return ((int_fast64_t)(a*b)>>FXFP_SCALE);
 }
 
 static inline fx_t fx_mul_opt(fx_t a, uint8_t ashf, fx_t b)
 {
     return ((a >> ashf) * (b >> (FXFP_SCALE - ashf)));
 }
+
+#define FX_MUL_OPT(a, ashf, b) (((a >> ashf) * (b >> (FXFP_SCALE - ashf))))
 
 static inline fx_t fx_mul_dopt(fx_t a, uint8_t ashf, fx_t b, uint8_t bshf)
 {
@@ -2678,20 +2686,24 @@ static inline fx_t roundup(float fp_number)
 
 static inline fx_t fp2fx(float fp)
 {
-    return roundup(fp*((fx_t)1 << FXFP_SCALE));
+    return fp*((fx_t)1 << FXFP_SCALE);
 }
+#define FP2FX(fp) (fx_t)((fp)*((fx_t)1 << FXFP_SCALE))
 
 static inline float fx2fp(fx_t fx)
 {
     return (float) (fx)/((fx_t)1 << FXFP_SCALE);
 }
+#define FX2FP(fx) ((float)(fx)/((fx_t)1 << FXFP_SCALE))
 
 fx_t * fp2fxarr(float* arr, size_t n)
 {
     fx_t * fx = (fx_t *) xcalloc(n, sizeof(fx_t));
     size_t i;
+    float temp;
     for (i = 0; i < n; ++i) {
-        fx[i] = fp2fx(arr[i]);
+        temp = arr[i];
+	fx[i] = FP2FX(temp);
     }
     return fx;
 }
@@ -2699,8 +2711,10 @@ fx_t * fp2fxarr(float* arr, size_t n)
 void fx2fparr(float* ret, fx_t* arr, size_t n)
 {
     size_t i;
+	fx_t temp;
     for (i = 0; i < n; ++i) {
-        ret[i] = fx2fp(arr[i]);
+        temp = arr[i];
+		ret[i] = FX2FP(temp);
     }
     free(arr);
 }
@@ -2713,14 +2727,74 @@ void gemm_nn_fx(int M, int N, int K, fx_t ALPHA,
     int i, j, k;
     for (i = 0; i < M; ++i) {
         for (k = 0; k < K; ++k) {
-            PUT_IN_REGISTER fx_t A_PART = fx_mul_opt(ALPHA, 14, A[i * lda + k]);
+            PUT_IN_REGISTER fx_t A_PART = FX_MUL_OPT(ALPHA, FXFP_SCALE, A[i * lda + k]);
             for (j = 0; j < N; ++j) {
-                C[i*ldc + j] += FX_MUL_DOPT(A_PART, 3, B[k*ldb + j], 5);
+            	C[i*ldc + j] += FX_MUL_DOPT(A_PART, 3, B[k*ldb + j], 5);
+	          }
+        }
+    }
+}
+
+/* modified from https://github.com/flame/how-to-optimize-gemm/wiki */
+void gemm_nn_fx_cacheopt(int M, int N, int K, fx_t ALPHA,
+    fx_t *a, int lda,
+    fx_t *b, int ldb,
+    fx_t *c, int ldc)
+{
+    int i, j, k;
+    for (j = 0; j < N; j+=4) {
+        for (i = 0; i < M; ++i) {
+            register fx_t c00reg, c01reg, c02reg, c03reg, areg;
+            c00reg = 0;
+            c01reg = 0;
+            c02reg = 0;
+            c03reg = 0;
+
+            for (k = 0; k < K; ++k) {
+                areg = FX_MUL_OPT(ALPHA, FXFP_SCALE, A(i,k));
+            	c00reg += FX_MUL_DOPT(areg, 3, B(k,j), 5);
+            	c01reg += FX_MUL_DOPT(areg, 3, B(k,j+1), 5);
+            	c02reg += FX_MUL_DOPT(areg, 3, B(k,j+2), 5);
+            	c03reg += FX_MUL_DOPT(areg, 3, B(k,j+3), 5);
+	    }
+
+            C(i,j) += c00reg;
+            C(i,j+1) += c01reg;
+            C(i,j+2) += c02reg;
+            C(i,j+3) += c03reg;
+        }
+    }
+
+    /* handle cases where N is not a multiple of 4 */
+    if (j != N) {
+        j-=4;
+        for (i = 0; i < M; ++i) {
+            register fx_t c00reg, c01reg, c02reg, c03reg, areg;
+            c00reg = 0;
+            c01reg = 0;
+            c02reg = 0;
+            c03reg = 0;
+
+            for (k = 0; k < K; ++k) {
+                areg = FX_MUL_OPT(ALPHA, FXFP_SCALE, A(i,k));
+                switch(N-j) {
+                case 3: c02reg += FX_MUL_DOPT(areg, 3, B(k,j+3), 5);
+                case 2: c01reg += FX_MUL_DOPT(areg, 3, B(k,j+2), 5);
+                case 1: c00reg += FX_MUL_DOPT(areg, 3, B(k,j+1), 5);
+                }
+	          }
+
+            switch(N-j) {
+            case 3: C(i,j+3) += c02reg;
+            case 2: C(i,j+2) += c01reg;
+            case 1: C(i,j+1) += c00reg;
             }
         }
     }
 }
 /*** ---End--- ***/
+
+// #define CACHE_OPT
 
 void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
         float *A, int lda,
@@ -2737,9 +2811,9 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
     printf("[C]");
     get_stats(C, M * N);
     */
-
-    fx_t alpha = fp2fx(ALPHA);
-    fx_t beta = fp2fx(BETA);
+    
+    fx_t alpha = FP2FX(ALPHA);
+    fx_t beta = FP2FX(BETA);
     fx_t * a = fp2fxarr(A, M*K);
     fx_t * b = fp2fxarr(B, K*N);
     fx_t * c = fp2fxarr(C, M*N);
@@ -2749,21 +2823,24 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
     // printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
     // printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, fx2fp(fp2fx(ALPHA)), lda, ldb, fx2fp(fp2fx(BETA)), ldc);
 
-    if (beta != fp2fx(1.0)){
+    if (beta != 1){
         int i, j;
         for(i = 0; i < M; ++i){
             for(j = 0; j < N; ++j){
-                c[i*ldc + j] = fx_mul_opt(beta, 14, c[i*ldc + j]);
+                c[i*ldc + j] = FX_MUL_OPT(beta, 14, c[i*ldc + j]);
             }
         }
     }
-
+#ifdef CACHE_OPT
+    gemm_nn_fx_cacheopt(M, N, K, ALPHA, a, lda,b, ldb, c, ldc);
+#else
     int t;
-    // #pragma omp parallel for
+    #pragma omp parallel for
     for (t = 0; t < M; ++t) {
         // TODO call modified gemm_nn_fixed_pt
         gemm_nn_fx(1, N, K, alpha, a + t*lda, lda, b, ldb, c + t*ldc, ldc);
     }
+#endif
     
     fx2fparr(A, a, M*K);
     fx2fparr(B, b, K*N);
