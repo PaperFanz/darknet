@@ -2659,6 +2659,7 @@ typedef int_fast32_t fx_t;
 #define B(i,j) b[ (i)*ldb + (j) ]
 #define C(i,j) c[ (i)*ldc + (j) ]
 
+
 static inline fx_t fx_mul(fx_t a, fx_t b)
 {
     return ((int_fast64_t)(a*b)>>FXFP_SCALE);
@@ -2729,7 +2730,7 @@ void gemm_nn_fx(int M, int N, int K, fx_t ALPHA,
             PUT_IN_REGISTER fx_t A_PART = FX_MUL_OPT(ALPHA, FXFP_SCALE, A[i * lda + k]);
             for (j = 0; j < N; ++j) {
             	C[i*ldc + j] += FX_MUL_DOPT(A_PART, 3, B[k*ldb + j], 5);
-	    }
+	          }
         }
     }
 }
@@ -2781,7 +2782,7 @@ void gemm_nn_fx_cacheopt(int M, int N, int K, fx_t ALPHA,
                 case 2: c01reg += FX_MUL_DOPT(areg, 3, B(k,j+2), 5);
                 case 1: c00reg += FX_MUL_DOPT(areg, 3, B(k,j+1), 5);
                 }
-	    }
+	          }
 
             switch(N-j) {
             case 3: C(i,j+3) += c02reg;
