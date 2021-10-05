@@ -888,7 +888,7 @@ void test_convolutional_layer()
         3,3,3,3,3};
     network_state state = {0};
     state.input = data;
-    forward_convolutional_layer(l, state);
+    forward_convolutional_layer_old(l, state);
 }
 
 void resize_convolutional_layer(convolutional_layer *l, int w, int h)
@@ -1207,7 +1207,7 @@ size_t binary_transpose_align_input(int k, int n, float *b, char **t_bit_input, 
     return t_intput_size;
 }
 
-void forward_convolutional_layer_simplified(convolutional_layer l, network_state state, fx_t a, fx_t b, fx_t c)
+void forward_convolutional_layer(convolutional_layer l, network_state state, fx_t a, fx_t b, fx_t c)
 {
     int out_h = convolutional_out_height(l);
     int out_w = convolutional_out_width(l);
@@ -1290,20 +1290,9 @@ void forward_convolutional_layer_simplified(convolutional_layer l, network_state
     //wait_until_press_key_cv();
 
     if(l.assisted_excitation && state.train) assisted_excitation_forward(l, state);
-
-    if (l.antialiasing) {
-        network_state s = { 0 };
-        s.train = state.train;
-        s.workspace = state.workspace;
-        s.net = state.net;
-        s.input = l.output;
-        forward_convolutional_layer_simple(*(l.input_layer), s, a, b, c);
-        //simple_copy_ongpu(l.outputs*l.batch, l.output, l.input_antialiasing);
-        memcpy(l.output, l.input_layer->output, l.input_layer->outputs * l.input_layer->batch * sizeof(float));
-    }
 }
 
-void forward_convolutional_layer(convolutional_layer l, network_state state)
+void forward_convolutional_layer_old(convolutional_layer l, network_state state)
 {
     int out_h = convolutional_out_height(l);
     int out_w = convolutional_out_width(l);
@@ -1519,7 +1508,7 @@ void forward_convolutional_layer(convolutional_layer l, network_state state)
         s.workspace = state.workspace;
         s.net = state.net;
         s.input = l.output;
-        forward_convolutional_layer(*(l.input_layer), s);
+        forward_convolutional_layer_old(*(l.input_layer), s);
         //simple_copy_ongpu(l.outputs*l.batch, l.output, l.input_antialiasing);
         memcpy(l.output, l.input_layer->output, l.input_layer->outputs * l.input_layer->batch * sizeof(float));
     }

@@ -38,6 +38,7 @@
 #include "gaussian_yolo_layer.h"
 #include "upsample_layer.h"
 #include "parser.h"
+#include "fx.h"
 
 load_args get_base_args(network *net)
 {

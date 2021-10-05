@@ -682,8 +682,8 @@ void forward_conv_lstm_layer(layer l, network_state state)
         if (l.peephole) {
             assert(l.outputs == vf.out_w * vf.out_h * vf.out_c);
             s.input = l.c_cpu;
-            forward_convolutional_layer(vf, s);
-            forward_convolutional_layer(vi, s);
+            forward_convolutional_layer_old(vf, s);
+            forward_convolutional_layer_old(vi, s);
             // vo below
         }
 
@@ -691,19 +691,19 @@ void forward_conv_lstm_layer(layer l, network_state state)
         assert(wf.c == l.out_c && wi.c == l.out_c && wg.c == l.out_c && wo.c == l.out_c);
 
         s.input = l.h_cpu;
-        forward_convolutional_layer(wf, s);
-        forward_convolutional_layer(wi, s);
-        forward_convolutional_layer(wg, s);
-        forward_convolutional_layer(wo, s);
+        forward_convolutional_layer_old(wf, s);
+        forward_convolutional_layer_old(wi, s);
+        forward_convolutional_layer_old(wg, s);
+        forward_convolutional_layer_old(wo, s);
 
         assert(l.inputs == uf.w * uf.h * uf.c);
         assert(uf.c == l.c && ui.c == l.c && ug.c == l.c && uo.c == l.c);
 
         s.input = state.input;
-        forward_convolutional_layer(uf, s);
-        forward_convolutional_layer(ui, s);
-        forward_convolutional_layer(ug, s);
-        forward_convolutional_layer(uo, s);
+        forward_convolutional_layer_old(uf, s);
+        forward_convolutional_layer_old(ui, s);
+        forward_convolutional_layer_old(ug, s);
+        forward_convolutional_layer_old(uo, s);
 
         // f = wf + uf + vf
         copy_cpu(l.outputs*l.batch, wf.output, 1, l.f_cpu, 1);
@@ -732,7 +732,7 @@ void forward_conv_lstm_layer(layer l, network_state state)
         // o = wo + uo + vo(c_new)
         if (l.peephole) {
             s.input = l.c_cpu;
-            forward_convolutional_layer(vo, s);
+            forward_convolutional_layer_old(vo, s);
         }
         copy_cpu(l.outputs*l.batch, wo.output, 1, l.o_cpu, 1);
         axpy_cpu(l.outputs*l.batch, 1, uo.output, 1, l.o_cpu, 1);

@@ -320,7 +320,7 @@ void forward_maxpool_layer(const maxpool_layer l, network_state state)
         s.workspace = state.workspace;
         s.net = state.net;
         s.input = l.output;
-        forward_convolutional_layer(*(l.input_layer), s);
+        forward_convolutional_layer_old(*(l.input_layer), s);
         //simple_copy_ongpu(l.outputs*l.batch, l.output, l.input_antialiasing);
         memcpy(l.output, l.input_layer->output, l.input_layer->outputs * l.input_layer->batch * sizeof(float));
     }

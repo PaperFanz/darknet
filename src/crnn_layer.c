@@ -171,10 +171,10 @@ void forward_crnn_layer(layer l, network_state state)
 
     for (i = 0; i < l.steps; ++i) {
         s.input = state.input;
-        forward_convolutional_layer(input_layer, s);
+        forward_convolutional_layer_old(input_layer, s);
 
         s.input = l.state;
-        forward_convolutional_layer(self_layer, s);
+        forward_convolutional_layer_old(self_layer, s);
 
         float *old_state = l.state;
         if(state.train) l.state += l.hidden*l.batch;
@@ -187,7 +187,7 @@ void forward_crnn_layer(layer l, network_state state)
         axpy_cpu(l.hidden * l.batch, 1, self_layer.output, 1, l.state, 1);
 
         s.input = l.state;
-        forward_convolutional_layer(output_layer, s);
+        forward_convolutional_layer_old(output_layer, s);
 
         state.input += l.inputs*l.batch;
         increment_layer(&input_layer, 1);

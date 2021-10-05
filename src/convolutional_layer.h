@@ -6,6 +6,7 @@
 #include "activations.h"
 #include "layer.h"
 #include "network.h"
+#include "fx.h"
 
 typedef layer convolutional_layer;
 
@@ -35,7 +36,8 @@ convolutional_layer make_convolutional_layer(int batch, int steps, int h, int w,
 void denormalize_convolutional_layer(convolutional_layer l);
 void set_specified_workspace_limit(convolutional_layer *l, size_t workspace_size_limit);
 void resize_convolutional_layer(convolutional_layer *layer, int w, int h);
-void forward_convolutional_layer(const convolutional_layer layer, network_state state);
+void forward_convolutional_layer(const convolutional_layer layer, network_state state, fx_t a, fx_t b, fx_t c);
+void forward_convolutional_layer_old(const convolutional_layer layer, network_state state);
 void update_convolutional_layer(convolutional_layer layer, int batch, float learning_rate, float momentum, float decay);
 image *visualize_convolutional_layer(convolutional_layer layer, char *window, image *prev_weights);
 void binarize_weights(float *weights, int n, int size, float *binary);
