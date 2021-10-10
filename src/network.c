@@ -39,6 +39,8 @@
 #include "upsample_layer.h"
 #include "parser.h"
 
+#include "fpga.h"
+
 load_args get_base_args(network *net)
 {
     load_args args = { 0 };
@@ -269,6 +271,12 @@ network make_network(int n)
 void forward_network(network net, network_state state)
 {
     state.workspace = net.workspace;
+
+    if (fpga_init() != 0) {
+        printf("f_c_l: fpga_init failed\n");
+        fflush(stdout);
+    }
+
     int i;
     for(i = 0; i < net.n; ++i){
         state.index = i;
@@ -288,6 +296,8 @@ void forward_network(network net, network_state state)
         printf(" i: %d - avg_val = %f \n", i, avg_val / l.outputs);
         */
     }
+
+    fpga_free();
 }
 
 void update_network(network net)

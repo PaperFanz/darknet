@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "fpga.h"
+
 #ifdef AI2
 #include "xnor_layer.h"
 #endif

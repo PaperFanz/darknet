@@ -2803,13 +2803,9 @@ void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
         float BETA,
         float *C, int ldc)
 {
-    fpga_init();
-
     fpga_gemm(M, N, K, A, lda, B, ldb, C, ldc);
 
     fpga_read(M, N, K, C);
-
-    fpga_free();
 }
 #endif
 
