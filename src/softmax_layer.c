@@ -498,12 +498,12 @@ void forward_contrastive_layer(contrastive_layer l, network_state state)
 
 
     // calc deltas
-    int bd = 0;
+    int bd, nd, hd, wd;
     #pragma omp parallel for
     for (bd = 0; bd < l.batch; ++bd) {
-        for (int nd = 0; nd < l.n; ++nd) {
-            for (int hd = 0; hd < l.h; ++hd) {
-                for (int wd = 0; wd < l.w; ++wd)
+        for (nd = 0; nd < l.n; ++nd) {
+            for (hd = 0; hd < l.h; ++hd) {
+                for (wd = 0; wd < l.w; ++wd)
                 {
                     const int z_index = bd*l.n*l.h*l.w + nd*l.h*l.w + hd*l.w + wd;
                     const size_t step = l.batch*l.n*l.h*l.w;

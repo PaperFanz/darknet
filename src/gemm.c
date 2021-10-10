@@ -13,6 +13,9 @@
 #include <omp.h>
 #endif
 
+#define FPGA_ACCEL
+#include "fpga.h"
+
 #if defined(_MSC_VER)
 #if defined(_M_ARM) || defined(_M_ARM64)
 static inline uint32_t popcnt(uint32_t v) {
@@ -114,7 +117,11 @@ void gemm(int TA, int TB, int M, int N, int K, float ALPHA,
         float BETA,
         float *C, int ldc)
 {
-    gemm_cpu( TA,  TB,  M, N, K, ALPHA,A,lda, B, ldb,BETA,C,ldc);
+#ifdef FPGA_ACCEL
+    gemm_fpga( TA,  TB,  M, N, K, ALPHA, A, lda, B, ldb, BETA, C, ldc);
+#else
+    gemm_cpu( TA,  TB,  M, N, K, ALPHA, A, lda, B, ldb, BETA, C, ldc);
+#endif
 }
 
 
@@ -2637,7 +2644,8 @@ void get_stats(float *A, int size)
 	float min = FLT_MAX;
 	float max = FLT_MIN;
 	float mean = 0;
-	for (int  i = 0; i < size; i++) {
+        int i;
+	for (i = 0; i < size; i++) {
 		if (A[i] < min) {
 			min = A[i];
 		}
@@ -2650,15 +2658,10 @@ void get_stats(float *A, int size)
 	printf("Min: %g, Max: %g, Mean: %g\n", min, max, mean);
 }
 
-/* make it a little easier to play with different int sizes and scales */
-typedef int_fast32_t fx_t;
-#define FXFP_SCALE 17
-
 /* modified from https://github.com/flame/how-to-optimize-gemm/wiki */
 #define A(i,j) a[ (i)*lda + (j) ]
 #define B(i,j) b[ (i)*ldb + (j) ]
 #define C(i,j) c[ (i)*ldc + (j) ]
-
 
 static inline fx_t fx_mul(fx_t a, fx_t b)
 {
@@ -2792,6 +2795,24 @@ void gemm_nn_fx_cacheopt(int M, int N, int K, fx_t ALPHA,
         }
     }
 }
+
+#ifdef FPGA_ACCEL
+void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
+        float *A, int lda,
+        float *B, int ldb,
+        float BETA,
+        float *C, int ldc)
+{
+    fpga_init();
+
+    fpga_gemm(M, N, K, A, lda, B, ldb, C, ldc);
+
+    fpga_read(M, N, K, C);
+
+    fpga_free();
+}
+#endif
+
 /*** ---End--- ***/
 
 // #define CACHE_OPT
@@ -2820,7 +2841,7 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
 
     // printf("fx_mul test: %g * %g = %g\n", 3.1415, 1.2345, fx2fp(fx_mul(fp2fx(3.1415), fp2fx(1.2345))));
 
-    // printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
+    printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
     // printf("cpu: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, fx2fp(fp2fx(ALPHA)), lda, ldb, fx2fp(fp2fx(BETA)), ldc);
 
     if (beta != 1){
