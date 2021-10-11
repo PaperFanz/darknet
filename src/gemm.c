@@ -13,7 +13,7 @@
 #include <omp.h>
 #endif
 
-// #define FPGA_ACCEL
+#define FPGA_ACCEL
 #include "fpga.h"
 
 #if defined(_MSC_VER)
@@ -2745,11 +2745,16 @@ void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
         float BETA,
         float *C, int ldc)
 {
+    printf("fpga: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
+
+    fx_t * a = fp2fxarr(A, M*K);
+    fx_t * b = fp2fxarr(B, K*N);
+    fx_t * c = fp2fxarr(C, M*N);
+    
     int m, n, nleft, k, kleft;
     int kstep = 1;
-    int nstep = 128;
+    int nstep = N;
     for (m = 0; m < M; ++m) {
-        printf("Progress: %d/%d\n", m, M);
         kleft = K;
         for (k = 0; k < K; k+=kstep, kleft-=kstep) {
             nleft = N;
@@ -2757,16 +2762,18 @@ void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
                 fpga_gemm(1, 
                         (nleft > nstep ? nstep : nleft), 
                         (kleft > kstep ? kstep : kleft), 
-                        A + m*lda + k, lda, 
-                        B + k*ldb + n, ldb, 
-                        C + m*ldc + n, ldc);
+                        a + m*lda + k, lda, 
+                        b + k*ldb + n, ldb, 
+                        c + m*ldc + n, ldc);
                 fpga_read(1, 
                         (nleft > nstep ? nstep : nleft), 
                         (kleft > kstep ? kstep : kleft), 
-                        C + m*ldc + n);
+                        c + m*ldc + n);
             }
         }
     }
+    
+    fx2fparr(C, c, M*N);
 }
 #endif
 

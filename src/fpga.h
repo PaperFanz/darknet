@@ -13,11 +13,11 @@ int fpga_init(void);
 bool fpga_ready(void);
 
 void fpga_gemm(int m, int n, int k,
-        float *A, int lda,
-        float *B, int ldb,
-        float *C, int ldc);
+        fx_t *A, int lda,
+        fx_t *B, int ldb,
+        fx_t *C, int ldc);
 
-void fpga_read(int m, int n, int k, float *C);
+void fpga_read(int m, int n, int k, fx_t *C);
 
 void fpga_free(void);
 
