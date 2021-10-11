@@ -13,7 +13,7 @@
 #include <omp.h>
 #endif
 
-#define FPGA_ACCEL
+// #define FPGA_ACCEL
 #include "fpga.h"
 
 #if defined(_MSC_VER)
@@ -2733,65 +2733,7 @@ void gemm_nn_fx(int M, int N, int K, fx_t ALPHA,
             PUT_IN_REGISTER fx_t A_PART = FX_MUL_OPT(ALPHA, FXFP_SCALE, A[i * lda + k]);
             for (j = 0; j < N; ++j) {
             	C[i*ldc + j] += FX_MUL_DOPT(A_PART, 3, B[k*ldb + j], 5);
-	          }
-        }
-    }
-}
-
-/* modified from https://github.com/flame/how-to-optimize-gemm/wiki */
-void gemm_nn_fx_cacheopt(int M, int N, int K, fx_t ALPHA,
-    fx_t *a, int lda,
-    fx_t *b, int ldb,
-    fx_t *c, int ldc)
-{
-    int i, j, k;
-    for (j = 0; j < N; j+=4) {
-        for (i = 0; i < M; ++i) {
-            register fx_t c00reg, c01reg, c02reg, c03reg, areg;
-            c00reg = 0;
-            c01reg = 0;
-            c02reg = 0;
-            c03reg = 0;
-
-            for (k = 0; k < K; ++k) {
-                areg = FX_MUL_OPT(ALPHA, FXFP_SCALE, A(i,k));
-            	c00reg += FX_MUL_DOPT(areg, 3, B(k,j), 5);
-            	c01reg += FX_MUL_DOPT(areg, 3, B(k,j+1), 5);
-            	c02reg += FX_MUL_DOPT(areg, 3, B(k,j+2), 5);
-            	c03reg += FX_MUL_DOPT(areg, 3, B(k,j+3), 5);
 	    }
-
-            C(i,j) += c00reg;
-            C(i,j+1) += c01reg;
-            C(i,j+2) += c02reg;
-            C(i,j+3) += c03reg;
-        }
-    }
-
-    /* handle cases where N is not a multiple of 4 */
-    if (j != N) {
-        j-=4;
-        for (i = 0; i < M; ++i) {
-            register fx_t c00reg, c01reg, c02reg, c03reg, areg;
-            c00reg = 0;
-            c01reg = 0;
-            c02reg = 0;
-            c03reg = 0;
-
-            for (k = 0; k < K; ++k) {
-                areg = FX_MUL_OPT(ALPHA, FXFP_SCALE, A(i,k));
-                switch(N-j) {
-                case 3: c02reg += FX_MUL_DOPT(areg, 3, B(k,j+3), 5);
-                case 2: c01reg += FX_MUL_DOPT(areg, 3, B(k,j+2), 5);
-                case 1: c00reg += FX_MUL_DOPT(areg, 3, B(k,j+1), 5);
-                }
-	          }
-
-            switch(N-j) {
-            case 3: C(i,j+3) += c02reg;
-            case 2: C(i,j+2) += c01reg;
-            case 1: C(i,j+1) += c00reg;
-            }
         }
     }
 }
@@ -2803,9 +2745,28 @@ void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
         float BETA,
         float *C, int ldc)
 {
-    fpga_gemm(M, N, K, A, lda, B, ldb, C, ldc);
-
-    fpga_read(M, N, K, C);
+    int m, n, nleft, k, kleft;
+    int kstep = 1;
+    int nstep = 128;
+    for (m = 0; m < M; ++m) {
+        printf("Progress: %d/%d\n", m, M);
+        kleft = K;
+        for (k = 0; k < K; k+=kstep, kleft-=kstep) {
+            nleft = N;
+            for (n = 0; n < N; n+=nstep, nleft-=nstep) {
+                fpga_gemm(1, 
+                        (nleft > nstep ? nstep : nleft), 
+                        (kleft > kstep ? kstep : kleft), 
+                        A + m*lda + k, lda, 
+                        B + k*ldb + n, ldb, 
+                        C + m*ldc + n, ldc);
+                fpga_read(1, 
+                        (nleft > nstep ? nstep : nleft), 
+                        (kleft > kstep ? kstep : kleft), 
+                        C + m*ldc + n);
+            }
+        }
+    }
 }
 #endif
 
@@ -2848,16 +2809,27 @@ void gemm_cpu(int TA, int TB, int M, int N, int K, float ALPHA,
             }
         }
     }
-#ifdef CACHE_OPT
-    gemm_nn_fx_cacheopt(M, N, K, ALPHA, a, lda,b, ldb, c, ldc);
-#else
-    int t;
-    #pragma omp parallel for
-    for (t = 0; t < M; ++t) {
-        // TODO call modified gemm_nn_fixed_pt
-        gemm_nn_fx(1, N, K, alpha, a + t*lda, lda, b, ldb, c + t*ldc, ldc);
+   
+    int m, n, nleft, k, kleft;
+    int kstep = 1;
+    int nstep = 256;
+    for (m = 0; m < M; ++m) {
+        kleft = K;
+        for (k = 0; k < K; k+=kstep, kleft-=kstep) {
+            nleft = N;
+            for (n = 0; n < N; n+=nstep, nleft-=nstep) {
+                gemm_nn_fx(
+                        1, 
+                        (nleft > nstep ? nstep : nleft), 
+                        (kleft > kstep ? kstep : kleft), 
+                        alpha, 
+                        a + m*lda + k, lda, 
+                        b + k*ldb + n, ldb, 
+                        c + m*ldc + n, ldc
+                );
+            }
+        }
     }
-#endif
     
     fx2fparr(A, a, M*K);
     fx2fparr(B, b, K*N);

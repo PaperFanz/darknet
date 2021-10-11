@@ -7,7 +7,7 @@ OPENMP=0
 LIBSO=0
 ZED_CAMERA=0
 ZED_CAMERA_v2_8=0
-ARM_CC=1
+ARM_CC=0
 PG=0
 
 # set GPU=1 and CUDNN=1 to speedup on GPU

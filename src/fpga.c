@@ -7,6 +7,8 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 
+//#define __DEBUG__
+
 #define ACCEL_BASE_ADDR (0xa0000000ULL)
 
 typedef enum GEMM_CTRL_REG {
@@ -26,7 +28,7 @@ typedef enum GEMM_CTRL_REG {
     GEMM_REG_NUM
 } gemm_reg_t;
 
-#define GEMM_TOT_BYTES (0x2000000ULL)
+#define GEMM_TOT_BYTES (0x600000ULL)
 
 /* float conversion macros */
 #define FP2FX(fp) (fx_t)((fp)*((fx_t)1 << FXFP_SCALE))
@@ -39,9 +41,10 @@ static volatile bool init_success = false;
 
 int fpga_init(void)
 {
-    if (init_success) return 0;
+#ifdef __DEBUG__
     printf("fpga_init\n");
     fflush(stdout);
+#endif
 
     //Open memory as a file
     memfd = open("/dev/mem", O_RDWR|O_SYNC);
@@ -67,8 +70,10 @@ int fpga_init(void)
 
     base[RESET] = 0x01;
     init_success = true;
+#ifdef __DEBUG__
     printf("fpga_init success\n");
     fflush(stdout);
+#endif
     return 0;
 }
 
@@ -96,8 +101,10 @@ void fpga_gemm(int m, int n, int k,
     base[B_STEP] = ldb;
     base[C_STEP] = ldc;
 
+#ifdef __DEBUG__
     printf("\nfpga_gemm: transferring arrays\nProgress: ");
     fflush(stdout);
+#endif
 
     const uint32_t one_16th = (m*k + n*k + m*n) >> 4;
     uint32_t progress = 0;
@@ -109,10 +116,12 @@ void fpga_gemm(int m, int n, int k,
     volatile uint32_t* arr = &base[arr_base];
     for (i = 0; i < s; ++i) {
         arr[i] = FP2FX(A[i]);
+#ifdef __DEBUG__
         if ((++progress % one_16th) == 0) {
             printf("\nfpga_gemm: %d/16\n", ++cnt);
             fflush(stdout);
         }
+#endif
     }
     arr_base += s;
 
@@ -121,10 +130,12 @@ void fpga_gemm(int m, int n, int k,
     arr = &base[arr_base];
     for (i = 0; i < s; ++i) {
         arr[i] = FP2FX(B[i]);
+#ifdef __DEBUG__
         if ((++progress % one_16th) == 0) {
             printf("\nfpga_gemm: %d/16\n", ++cnt);
             fflush(stdout);
         }
+#endif
     }
     arr_base += s;
 
@@ -133,14 +144,18 @@ void fpga_gemm(int m, int n, int k,
     arr = &base[arr_base];
     for (i = 0; i < s; ++i) {
         arr[i] = FP2FX(C[i]);
+#ifdef __DEBUG__
         if ((++progress % one_16th) == 0) {
             printf("\nfpga_gemm: %d/16\n", ++cnt);
             fflush(stdout);
         }
+#endif
     }
 
+#ifdef __DEBUG__
     printf("\ndone\n");
     fflush(stdout);
+#endif
 
     base[DATA_RDY] = 0x01;
 }
@@ -148,12 +163,16 @@ void fpga_gemm(int m, int n, int k,
 void fpga_read(int m, int n, int k, float* C)
 {
     if (!init_success) return;
+#ifdef __DEBUG__
     printf("\nfpga_read: wait for ready\n");
     fflush(stdout);
+#endif
     while (!fpga_ready());
 
+#ifdef __DEBUG__
     printf("\nfpga_read: transferring arrays\nProgress: ");
     fflush(stdout);
+#endif
 
     int i, s = m*n;
     uint32_t* arr = &base[base[C_BASE]];
@@ -161,20 +180,26 @@ void fpga_read(int m, int n, int k, float* C)
         C[i] = FX2FP(arr[i]);
     }
 
+#ifdef __DEBUG__
     printf("\nfpga_read: done\n");
     fflush(stdout);
+#endif
 }
 
 void fpga_free(void)
 {
     if (!init_success) return;
+#ifdef __DEBUG__
     printf("\nfpga_free: free\n");
     fflush(stdout);
+#endif
     init_success = false;
     munmap((void *) base, GEMM_TOT_BYTES);
     close(memfd);
+#ifdef __DEBUG__
     printf("\nfpga_free: done\n");
     fflush(stdout);
+#endif
 }
 
 
