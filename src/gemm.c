@@ -14,6 +14,7 @@
 #endif
 
 #define FPGA_ACCEL
+#define __INFINITE_MEM__
 #include "fpga.h"
 
 #if defined(_MSC_VER)
@@ -2750,10 +2751,14 @@ void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
     fx_t * a = fp2fxarr(A, M*K);
     fx_t * b = fp2fxarr(B, K*N);
     fx_t * c = fp2fxarr(C, M*N);
-    
+   
+#ifdef __INFINITE_MEM__
+    fpga_gemm(M, N, K, a, lda, b, ldb, c, ldc);
+    fpga_read(M, N, K, c);
+#else
     int m, n, nleft, k, kleft;
     int kstep = 1;
-    int nstep = N;
+    int nstep = 256;
     for (m = 0; m < M; ++m) {
         kleft = K;
         for (k = 0; k < K; k+=kstep, kleft-=kstep) {
@@ -2772,6 +2777,7 @@ void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
             }
         }
     }
+#endif
     
     fx2fparr(C, c, M*N);
 }

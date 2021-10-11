@@ -8,9 +8,9 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 
-//#define __DEBUG__
+#define __DEBUG__
 
-#define ACCEL_BASE_ADDR (0xa0000000ULL)
+#define ACCEL_BASE_ADDR (0xa1000000ULL)
 
 typedef enum GEMM_CTRL_REG {
     M_SIZE = 0,
@@ -29,7 +29,8 @@ typedef enum GEMM_CTRL_REG {
     GEMM_REG_NUM
 } gemm_reg_t;
 
-#define GEMM_TOT_BYTES (0x600000ULL)
+#define GEMM_TOT_BYTES (0x20000000ULL)
+#define MAP_MASK (GEMM_TOT_BYTES-1)
 
 /* global memmap for fpga accesses */
 static volatile int memfd = 0;
@@ -51,13 +52,23 @@ int fpga_init(void)
         return -1;
     }	
 
+#ifdef __DEBUG__
+    printf("fpga_init memfd'd\n");
+    fflush(stdout);
+#endif
+
     //Map the physical base address to local pointer (in virtual address space)
-    base = (uint32_t *)mmap(NULL, GEMM_TOT_BYTES, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, ACCEL_BASE_ADDR);	
-    if((base == MAP_FAILED)) {
+    base = (uint32_t *)mmap(NULL, GEMM_TOT_BYTES, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, ACCEL_BASE_ADDR & ~MAP_MASK);	
+    if(base == NULL) {
         printf("mapping failed\n");
         fflush(stdout);
         return -2;
     }
+
+#ifdef __DEBUG__
+    printf("fpga_init mmap'd\n");
+    fflush(stdout);
+#endif
 
     if (base[MAGIC] != 0xdeadbeefULL) {
         printf("accelerator memory corrupted\n");
