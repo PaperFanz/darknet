@@ -123,11 +123,11 @@ void fpga_gemm(int m, int n, int k,
     fflush(stdout);
 #endif
 
-    size_t abase = GEMM_REG_NUM;
-    size_t asize = m*k;
-    size_t bbase = abase+asize;
-    size_t bsize = k*n;
-    size_t cbase = bbase+bsize;
+    int32_t abase = GEMM_REG_NUM;
+    int32_t asize = m*k;
+    int32_t bbase = abase+asize;
+    int32_t bsize = k*n;
+    int32_t cbase = bbase+bsize;
     base0[A_BASE] = abase;
     base0[B_BASE] = bbase;
     base0[C_BASE] = cbase;
@@ -140,8 +140,8 @@ void fpga_gemm(int m, int n, int k,
     if (bbase < MAP_BLK_WORDS) {
         memcpy(base0+abase, A, asize*sizeof(fx_t));
     } else {
-        size_t sb1 = bbase - MAP_BLK_WORDS;
-        size_t sb0 = asize - sb1;
+        int32_t sb1 = bbase - MAP_BLK_WORDS;
+        int32_t sb0 = asize - sb1;
 #ifdef __DEBUG__
     printf("\nfpga_gemm: A is split, sb0: %ld, sb1: %ld\n", sb0, sb1);
     fflush(stdout);
@@ -158,8 +158,8 @@ void fpga_gemm(int m, int n, int k,
     if (bbase < abase) {
         memcpy(&base1[bbase], B, bsize*sizeof(fx_t));    
     } else {
-        size_t sb1 = cbase - MAP_BLK_WORDS;
-        size_t sb0 = bsize - sb1;
+        int32_t sb1 = cbase - MAP_BLK_WORDS;
+        int32_t sb0 = bsize - sb1;
 #ifdef __DEBUG__
     printf("\nfpga_gemm: B potentially split, bbase: %ld, sb0: %ld, sb1: %ld\n", bbase, sb0, sb1);
     fflush(stdout);
@@ -194,11 +194,11 @@ void fpga_read(int m, int n, int k, fx_t* C)
     fflush(stdout);
 #endif
 
-    size_t cbase = base0[C_BASE];
-    size_t csize = m*n;
+    int32_t cbase = base0[C_BASE];
+    int32_t csize = m*n;
     if (cbase < MAP_BLK_WORDS) {
-        size_t sb1 = cbase + csize - MAP_BLK_WORDS;
-        size_t sb0 = csize = sb1;
+        int32_t sb1 = cbase + csize - MAP_BLK_WORDS;
+        int32_t sb0 = csize = sb1;
 #ifdef __DEBUG__
     printf("\nfpga_read: C potentially split, cbase: %ld, sb0: %ld, sb1: %ld\n", cbase, sb0, sb1);
     fflush(stdout);
