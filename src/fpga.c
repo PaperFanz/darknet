@@ -29,13 +29,16 @@ typedef enum GEMM_CTRL_REG {
     GEMM_REG_NUM
 } gemm_reg_t;
 
-#define GEMM_TOT_BYTES (0x20000000ULL)
-#define MAP_MASK (GEMM_TOT_BYTES-1)
+#define GEMM_TOT_BYTES  (0x20000000ULL)
+#define MAP_SIZE        (0x1000000ULL)
+#define MAP_MASK        (MAP_SIZE-1)
+#define MAP_BLK_WORDS   (MAP_SIZE>>2)
 
 /* global memmap for fpga accesses */
-static volatile int memfd = 0;
-static volatile uint32_t* base = NULL;
-static volatile bool init_success = false;
+volatile int memfd = 0;
+volatile uint32_t* base0 = NULL;
+volatile uint32_t* base1 = NULL;
+volatile bool init_success = false;
 
 int fpga_init(void)
 {
@@ -50,7 +53,7 @@ int fpga_init(void)
         printf("Unable to open /dev/mem.  Ensure it exists (major=1, minor=1)\n");
         fflush(stdout);
         return -1;
-    }	
+    }
 
 #ifdef __DEBUG__
     printf("fpga_init memfd'd\n");
@@ -58,8 +61,14 @@ int fpga_init(void)
 #endif
 
     //Map the physical base address to local pointer (in virtual address space)
-    base = (uint32_t *)mmap(NULL, GEMM_TOT_BYTES, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, ACCEL_BASE_ADDR & ~MAP_MASK);	
-    if(base == NULL) {
+    base0 = (uint32_t *)mmap(NULL, MAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, ACCEL_BASE_ADDR & ~MAP_MASK);	
+    if(base0 == MAP_FAILED) {
+        printf("mapping failed\n");
+        fflush(stdout);
+        return -2;
+    }
+    base1 = (uint32_t *)mmap(NULL, MAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (ACCEL_BASE_ADDR+MAP_SIZE) & ~MAP_MASK);	
+    if(base1 == MAP_FAILED) {
         printf("mapping failed\n");
         fflush(stdout);
         return -2;
@@ -69,14 +78,13 @@ int fpga_init(void)
     printf("fpga_init mmap'd\n");
     fflush(stdout);
 #endif
-
-    if (base[MAGIC] != 0xdeadbeefULL) {
+    
+    if (base0[MAGIC] != 0xdeadbeefULL) {
         printf("accelerator memory corrupted\n");
         fflush(stdout);
         return -3;
     }
 
-    base[RESET] = 0x01;
     init_success = true;
 #ifdef __DEBUG__
     printf("fpga_init success\n");
@@ -88,7 +96,7 @@ int fpga_init(void)
 bool fpga_ready(void)
 {
     if (init_success) {
-        return base[DATA_RDY] & 0x02;
+        return base0[DATA_RDY] & 0x02;
     } else {
         return false;
     }
@@ -100,44 +108,76 @@ void fpga_gemm(int m, int n, int k,
         fx_t *C, int ldc)
 {
     if (!init_success) return;
+    base0[RESET] = 0x01;
     while (!fpga_ready());
 
-    base[M_SIZE] = m;
-    base[N_SIZE] = n;
-    base[K_SIZE] = k;
-    base[A_STEP] = lda;
-    base[B_STEP] = ldb;
-    base[C_STEP] = ldc;
+    base0[M_SIZE] = m;
+    base0[N_SIZE] = n;
+    base0[K_SIZE] = k;
+    base0[A_STEP] = lda;
+    base0[B_STEP] = ldb;
+    base0[C_STEP] = ldc;
 
 #ifdef __DEBUG__
-    printf("\nfpga_gemm: transferring arrays\nProgress: ");
+    printf("\nfpga_gemm: transferring arrays\n");
     fflush(stdout);
 #endif
 
-    size_t arr_base = GEMM_REG_NUM;
-    size_t s = m*k;
-    base[A_BASE] = arr_base;
-    void* arr = &base[arr_base];
-    memcpy(arr, A, s*sizeof(fx_t));
-    arr_base += s;
+    size_t abase = GEMM_REG_NUM;
+    size_t asize = m*k;
+    size_t bbase = abase+asize;
+    size_t bsize = k*n;
+    size_t cbase = bbase+bsize;
+    base0[A_BASE] = abase;
+    base0[B_BASE] = bbase;
+    base0[C_BASE] = cbase;
 
-    s = k*n;
-    base[B_BASE] = arr_base;
-    arr = &base[arr_base];
-    memcpy(arr, B, s*sizeof(fx_t));
-    arr_base += s;
+    /* some dirty shit to memcpy accross mmap boundaries */
+#ifdef __DEBUG__
+    printf("\nfpga_gemm: transferring A\n");
+    fflush(stdout);
+#endif
+    if (bbase < MAP_BLK_WORDS) {
+        memcpy(base0+abase, A, asize*sizeof(fx_t));
+    } else {
+        size_t sb1 = bbase - MAP_BLK_WORDS;
+        size_t sb0 = asize - sb1;
+#ifdef __DEBUG__
+    printf("\nfpga_gemm: A is split, sb0: %ld, sb1: %ld\n", sb0, sb1);
+    fflush(stdout);
+#endif
+        memcpy(base0+abase, A, sb0*sizeof(fx_t));
+        memcpy(base1, A+sb0, sb1*sizeof(fx_t));
+        bbase = sb1;
+    }
 
-    s = m*n;
-    base[C_BASE] = arr_base;
-    arr = &base[arr_base];
-    memcpy(arr, C, s*sizeof(fx_t));
-
+#ifdef __DEBUG__
+    printf("\nfpga_gemm: transferring B\n");
+    fflush(stdout);
+#endif
+    if (bbase < abase) {
+        memcpy(&base1[bbase], B, bsize*sizeof(fx_t));    
+    } else {
+        size_t sb1 = cbase - MAP_BLK_WORDS;
+        size_t sb0 = bsize - sb1;
+#ifdef __DEBUG__
+    printf("\nfpga_gemm: B potentially split, bbase: %ld, sb0: %ld, sb1: %ld\n", bbase, sb0, sb1);
+    fflush(stdout);
+#endif
+        memcpy(base0+bbase, B, sb0*sizeof(fx_t));
+#ifdef __DEBUG__
+    printf("\nfpga_gemm: sb0 copied\n");
+    fflush(stdout);
+#endif
+        if (sb1 > 0) memcpy(base1, B+sb0, sb1*sizeof(fx_t));
+    }
+    
 #ifdef __DEBUG__
     printf("\ndone\n");
     fflush(stdout);
 #endif
 
-    base[DATA_RDY] = 0x01;
+    base0[DATA_RDY] = 0x01;
 }
 
 void fpga_read(int m, int n, int k, fx_t* C)
@@ -154,9 +194,25 @@ void fpga_read(int m, int n, int k, fx_t* C)
     fflush(stdout);
 #endif
 
-    size_t s = m*n;
-    void* arr = &base[base[C_BASE]];
-    memcpy(C, arr, s*sizeof(fx_t));
+    size_t cbase = base0[C_BASE];
+    size_t csize = m*n;
+    if (cbase < MAP_BLK_WORDS) {
+        size_t sb1 = cbase + csize - MAP_BLK_WORDS;
+        size_t sb0 = csize = sb1;
+#ifdef __DEBUG__
+    printf("\nfpga_read: C potentially split, cbase: %ld, sb0: %ld, sb1: %ld\n", cbase, sb0, sb1);
+    fflush(stdout);
+#endif
+        memcpy(C, base0+cbase, sb0*sizeof(fx_t));
+        if (sb1 > 0) memcpy(C, base1, sb1*sizeof(fx_t));
+    } else {
+#ifdef __DEBUG__
+    printf("\nfpga_read: C in base1\n");
+    fflush(stdout);
+#endif
+        cbase -= MAP_BLK_WORDS;
+        memcpy(C, base1+cbase, csize*sizeof(fx_t));
+    }
 
 #ifdef __DEBUG__
     printf("\nfpga_read: done\n");
@@ -172,7 +228,8 @@ void fpga_free(void)
     fflush(stdout);
 #endif
     init_success = false;
-    munmap((void *) base, GEMM_TOT_BYTES);
+    munmap((void *) base0, MAP_SIZE);
+    munmap((void *) base1, MAP_SIZE);
     close(memfd);
 #ifdef __DEBUG__
     printf("\nfpga_free: done\n");

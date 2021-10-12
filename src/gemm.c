@@ -2757,8 +2757,8 @@ void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
     fpga_read(M, N, K, c);
 #else
     int m, n, nleft, k, kleft;
-    int kstep = 1;
-    int nstep = 256;
+    int kstep = K;
+    int nstep = 1024;
     for (m = 0; m < M; ++m) {
         kleft = K;
         for (k = 0; k < K; k+=kstep, kleft-=kstep) {
@@ -2770,10 +2770,12 @@ void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
                         a + m*lda + k, lda, 
                         b + k*ldb + n, ldb, 
                         c + m*ldc + n, ldc);
+                /*
                 fpga_read(1, 
                         (nleft > nstep ? nstep : nleft), 
                         (kleft > kstep ? kstep : kleft), 
                         c + m*ldc + n);
+                */
             }
         }
     }

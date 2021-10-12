@@ -5,7 +5,7 @@
 #include <stdbool.h>
 
 /* make it a little easier to play with different int sizes and scales */
-typedef int_fast32_t fx_t;
+typedef int32_t fx_t;
 #define FXFP_SCALE 17
 
 int fpga_init(void);
