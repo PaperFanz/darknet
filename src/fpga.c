@@ -141,27 +141,24 @@ void fpga_gemm(int m, int n, int k,
         memcpy(base0+abase, A, asize*sizeof(fx_t));
     } else {
         int32_t sb1 = bbase - MAP_BLK_WORDS;
-        int32_t sb0 = asize - sb1;
+        int32_t sb0 = asize - (sb1 > 0 ? sb1 : 0);
 #ifdef __DEBUG__
-    printf("\nfpga_gemm: A is split, sb0: %ld, sb1: %ld\n", sb0, sb1);
+    printf("\nfpga_gemm: A is split, asize: %d, sb0: %d, sb1: %d\n", asize, sb0, sb1);
     fflush(stdout);
 #endif
         memcpy(base0+abase, A, sb0*sizeof(fx_t));
         memcpy(base1, A+sb0, sb1*sizeof(fx_t));
-        bbase = sb1;
     }
 
 #ifdef __DEBUG__
     printf("\nfpga_gemm: transferring B\n");
     fflush(stdout);
 #endif
-    if (bbase < abase) {
-        memcpy(&base1[bbase], B, bsize*sizeof(fx_t));    
-    } else {
+    if (bbase < MAP_BLK_WORDS) {
         int32_t sb1 = cbase - MAP_BLK_WORDS;
-        int32_t sb0 = bsize - sb1;
+        int32_t sb0 = bsize - (sb1 > 0 ? sb1 : 0);
 #ifdef __DEBUG__
-    printf("\nfpga_gemm: B potentially split, bbase: %ld, sb0: %ld, sb1: %ld\n", bbase, sb0, sb1);
+    printf("\nfpga_gemm: B potentially split, bbase: %d, bsize: %d, sb0: %d, sb1: %d\n", bbase, bsize, sb0, sb1);
     fflush(stdout);
 #endif
         memcpy(base0+bbase, B, sb0*sizeof(fx_t));
@@ -170,6 +167,9 @@ void fpga_gemm(int m, int n, int k,
     fflush(stdout);
 #endif
         if (sb1 > 0) memcpy(base1, B+sb0, sb1*sizeof(fx_t));
+    } else {
+        bbase -= MAP_BLK_WORDS;
+        memcpy(base1+bbase, B, bsize*sizeof(fx_t));    
     }
     
 #ifdef __DEBUG__
@@ -198,9 +198,9 @@ void fpga_read(int m, int n, int k, fx_t* C)
     int32_t csize = m*n;
     if (cbase < MAP_BLK_WORDS) {
         int32_t sb1 = cbase + csize - MAP_BLK_WORDS;
-        int32_t sb0 = csize = sb1;
+        int32_t sb0 = csize - (sb1 > 0 ? sb1 : 0);
 #ifdef __DEBUG__
-    printf("\nfpga_read: C potentially split, cbase: %ld, sb0: %ld, sb1: %ld\n", cbase, sb0, sb1);
+    printf("\nfpga_read: C potentially split, cbase: %d, csize: %d, sb0: %d, sb1: %d\n", cbase, csize, sb0, sb1);
     fflush(stdout);
 #endif
         memcpy(C, base0+cbase, sb0*sizeof(fx_t));
