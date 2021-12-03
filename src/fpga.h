@@ -7,6 +7,9 @@
 /* make it a little easier to play with different int sizes and scales */
 typedef int32_t fx_t;
 #define FXFP_SCALE 17
+#define MAX_M 1024
+#define MAX_K 4608
+#define MAX_N 173056
 
 int fpga_init(void);
 

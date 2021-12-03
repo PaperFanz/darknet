@@ -1,17 +1,21 @@
 #include "fpga.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/mman.h>
+#include <sys/ioctl.h>
 #include <fcntl.h>
+#include <signal.h>
+#include <unistd.h>
+#include <assert.h>
 
 #define __DEBUG__
 
-#define ACCEL_BASE_ADDR (0xa1000000ULL)
-
+#define ACCEL_BASE_ADDR (0xa1000000ULL) // to change
+#define A_BASE_ADDR (0xa1000000ULL) // to change
+#define B_BASE_ADDR (0xa1000000ULL) // to change
+#define C_BASE_ADDR (0xa1000000ULL) // to change
 typedef enum GEMM_CTRL_REG {
     M_SIZE = 0,
     N_SIZE,
@@ -29,16 +33,45 @@ typedef enum GEMM_CTRL_REG {
     GEMM_REG_NUM
 } gemm_reg_t;
 
-#define GEMM_TOT_BYTES  (0x20000000ULL)
-#define MAP_SIZE        (0x1000000ULL)
-#define MAP_MASK        (MAP_SIZE-1)
-#define MAP_BLK_WORDS   (MAP_SIZE>>2)
+//#define GEMM_TOT_BYTES  (0x20000000ULL)
+//#define MAP_SIZE        (0x1000000ULL)
+#define ACCELMAP_SIZE        (0x1000ULL)
+#define ACCELMAP_MASK        (ACCELMAP_SIZE-1)
+#define ACCELMAP_BLK_WORDS   (ACCELMAP_SIZE>>2)
+#define AMAP_SIZE        (0x1000ULL)
+#define AMAP_MASK        (AMAP_SIZE-1)
+#define AMAP_BLK_WORDS   (AMAP_SIZE>>2)
+#define BMAP_SIZE        (0x1000ULL)
+#define BMAP_MASK        (BMAP_SIZE-1)
+#define BMAP_BLK_WORDS   (BMAP_SIZE>>2)
+#define CMAP_SIZE        (0x1000ULL)
+#define CMAP_MASK        (CMAP_SIZE-1)
+#define CMAP_BLK_WORDS   (CMAP_SIZE>>2)
 
 /* global memmap for fpga accesses */
 volatile int memfd = 0;
-volatile uint32_t* base0 = NULL;
-volatile uint32_t* base1 = NULL;
+volatile uint32_t* accelptr = NULL;
+volatile uint32_t* aptr = NULL;
+volatile uint32_t* bptr = NULL;
+volatile uint32_t* cptr = NULL;
 volatile bool init_success = false;
+
+/* interrupt stuff */
+#define READ_CMD  (0x0 << 31)
+#define WRITE_CMD (0x1 << 31)
+volatile int det_int = 0;
+
+// signal handler for receiving events from hardware driver
+void sighandler(int signo)
+{
+  if(signo==SIGIO)
+    {
+      det_int++;
+      printf("\nInterrupt detected\n");
+    }
+  
+  return;
+}
 
 int fpga_init(void)
 {
@@ -61,15 +94,27 @@ int fpga_init(void)
 #endif
 
     //Map the physical base address to local pointer (in virtual address space)
-    base0 = (uint32_t *)mmap(NULL, MAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, ACCEL_BASE_ADDR & ~MAP_MASK);	
-    if(base0 == MAP_FAILED) {
-        printf("mapping failed\n");
+    accelptr = (uint32_t *)mmap(NULL, ACCELMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (ACCEL_BASE_ADDR) & ~ACCELMAP_MASK);	
+    if(accelptr == MAP_FAILED) {
+        printf("accel mapping failed\n");
         fflush(stdout);
         return -2;
     }
-    base1 = (uint32_t *)mmap(NULL, MAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (ACCEL_BASE_ADDR+MAP_SIZE) & ~MAP_MASK);	
-    if(base1 == MAP_FAILED) {
-        printf("mapping failed\n");
+    aptr = (uint32_t *)mmap(NULL, AMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (A_BASE_ADDR) & ~AMAP_MASK);	
+    if(aptr == MAP_FAILED) {
+        printf("a mapping failed\n");
+        fflush(stdout);
+        return -2;
+    }
+    bptr = (uint32_t *)mmap(NULL, BMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (B_BASE_ADDR) & ~BMAP_MASK);	
+    if(bptr == MAP_FAILED) {
+        printf("b mapping failed\n");
+        fflush(stdout);
+        return -2;
+    }
+    cptr = (uint32_t *)mmap(NULL, CMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (C_BASE_ADDR) & ~CMAP_MASK);	
+    if(cptr == MAP_FAILED) {
+        printf("c mapping failed\n");
         fflush(stdout);
         return -2;
     }
@@ -79,11 +124,43 @@ int fpga_init(void)
     fflush(stdout);
 #endif
     
-    if (base0[MAGIC] != 0xdeadbeefULL) {
-        printf("accelerator memory corrupted\n");
-        fflush(stdout);
-        return -3;
+//    if (aptr[MAGIC] != 0xdeadbeefULL) {
+//        printf("accelerator memory corrupted\n");
+//        fflush(stdout);
+//        return -3;
+//    }
+
+    // Setup interrupt
+    unsigned long volatile gie, iie;
+    struct sigaction action;
+    int fd;
+    // install signal handler
+    sigemptyset(&action.sa_mask);
+    sigaddset(&action.sa_mask, SIGIO);
+
+    action.sa_handler = sighandler;
+    action.sa_flags=0;
+
+    sigaction(SIGIO, &action, NULL);
+
+    // open hardware device (driver)
+    fd=open("/dev/fpga", O_RDWR);
+    if(fd < 0)
+    {
+
+        printf("Unable to open /dev/fpga.  Ensure it exists!\n");
+        return -1;
     }
+    fcntl(fd, F_SETOWN, getpid());
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL)|O_ASYNC);
+
+    // enable FPGA interrupts (global and IP)
+    ioctl(fd, READ_CMD + 0x1, &gie);
+    gie = gie | 0x00000001;
+    ioctl(fd, WRITE_CMD + 0x1, &gie);
+
+    iie = 0x1;
+    ioctl(fd, WRITE_CMD + 0x2, &iie);
 
     init_success = true;
 #ifdef __DEBUG__
@@ -96,7 +173,7 @@ int fpga_init(void)
 bool fpga_ready(void)
 {
     if (init_success) {
-        return base0[DATA_RDY] & 0x02;
+        return det_int;
     } else {
         return false;
     }
@@ -108,76 +185,37 @@ void fpga_gemm(int m, int n, int k,
         fx_t *C, int ldc)
 {
     if (!init_success) return;
-    base0[RESET] = 0x01;
+    accelptr[RESET] = 0x01;
     while (!fpga_ready());
 
-    base0[M_SIZE] = m;
-    base0[N_SIZE] = n;
-    base0[K_SIZE] = k;
-    base0[A_STEP] = lda;
-    base0[B_STEP] = ldb;
-    base0[C_STEP] = ldc;
+    int i;
 
 #ifdef __DEBUG__
     printf("\nfpga_gemm: transferring arrays\n");
     fflush(stdout);
 #endif
 
-    int32_t abase = GEMM_REG_NUM;
-    int32_t asize = m*k;
-    int32_t bbase = abase+asize;
-    int32_t bsize = k*n;
-    int32_t cbase = bbase+bsize;
-    base0[A_BASE] = abase;
-    base0[B_BASE] = bbase;
-    base0[C_BASE] = cbase;
+    int32_t asize = k;
+    int32_t bsize = k;
 
-    /* some dirty shit to memcpy accross mmap boundaries */
 #ifdef __DEBUG__
     printf("\nfpga_gemm: transferring A\n");
     fflush(stdout);
 #endif
-    if (bbase < MAP_BLK_WORDS) {
-        memcpy(base0+abase, A, asize*sizeof(fx_t));
-    } else {
-        int32_t sb1 = bbase - MAP_BLK_WORDS;
-        int32_t sb0 = asize - (sb1 > 0 ? sb1 : 0);
-#ifdef __DEBUG__
-    printf("\nfpga_gemm: A is split, asize: %d, sb0: %d, sb1: %d\n", asize, sb0, sb1);
-    fflush(stdout);
-#endif
-        memcpy(base0+abase, A, sb0*sizeof(fx_t));
-        memcpy(base1, A+sb0, sb1*sizeof(fx_t));
-    }
+    memcpy(aptr, A, asize*sizeof(fx_t));
 
 #ifdef __DEBUG__
     printf("\nfpga_gemm: transferring B\n");
     fflush(stdout);
 #endif
-    if (bbase < MAP_BLK_WORDS) {
-        int32_t sb1 = cbase - MAP_BLK_WORDS;
-        int32_t sb0 = bsize - (sb1 > 0 ? sb1 : 0);
-#ifdef __DEBUG__
-    printf("\nfpga_gemm: B potentially split, bbase: %d, bsize: %d, sb0: %d, sb1: %d\n", bbase, bsize, sb0, sb1);
-    fflush(stdout);
-#endif
-        memcpy(base0+bbase, B, sb0*sizeof(fx_t));
-#ifdef __DEBUG__
-    printf("\nfpga_gemm: sb0 copied\n");
-    fflush(stdout);
-#endif
-        if (sb1 > 0) memcpy(base1, B+sb0, sb1*sizeof(fx_t));
-    } else {
-        bbase -= MAP_BLK_WORDS;
-        memcpy(base1+bbase, B, bsize*sizeof(fx_t));    
-    }
+    memcpy(bptr, B, bsize*sizeof(fx_t));
     
 #ifdef __DEBUG__
     printf("\ndone\n");
     fflush(stdout);
 #endif
 
-    base0[DATA_RDY] = 0x01;
+    accelptr[DATA_RDY] = 0x01;
 }
 
 void fpga_read(int m, int n, int k, fx_t* C)
@@ -189,31 +227,12 @@ void fpga_read(int m, int n, int k, fx_t* C)
 #endif
     while (!fpga_ready());
 
+    int32_t csize = 1;
 #ifdef __DEBUG__
-    printf("\nfpga_read: transferring arrays\n");
+    printf("\nfpga_read: C\n");
     fflush(stdout);
 #endif
-
-    int32_t cbase = base0[C_BASE];
-    int32_t csize = m*n;
-    if (cbase < MAP_BLK_WORDS) {
-        int32_t sb1 = cbase + csize - MAP_BLK_WORDS;
-        int32_t sb0 = csize - (sb1 > 0 ? sb1 : 0);
-#ifdef __DEBUG__
-    printf("\nfpga_read: C potentially split, cbase: %d, csize: %d, sb0: %d, sb1: %d\n", cbase, csize, sb0, sb1);
-    fflush(stdout);
-#endif
-        memcpy(C, base0+cbase, sb0*sizeof(fx_t));
-        if (sb1 > 0) memcpy(C, base1, sb1*sizeof(fx_t));
-    } else {
-#ifdef __DEBUG__
-    printf("\nfpga_read: C in base1\n");
-    fflush(stdout);
-#endif
-        cbase -= MAP_BLK_WORDS;
-        memcpy(C, base1+cbase, csize*sizeof(fx_t));
-    }
-
+    memcpy(C, cptr, csize*sizeof(fx_t));
 #ifdef __DEBUG__
     printf("\nfpga_read: done\n");
     fflush(stdout);
@@ -228,8 +247,10 @@ void fpga_free(void)
     fflush(stdout);
 #endif
     init_success = false;
-    munmap((void *) base0, MAP_SIZE);
-    munmap((void *) base1, MAP_SIZE);
+    munmap((void *) accelptr, ACCELMAP_SIZE);
+    munmap((void *) aptr, AMAP_SIZE);
+    munmap((void *) bptr, BMAP_SIZE);
+    munmap((void *) cptr, CMAP_SIZE);
     close(memfd);
 #ifdef __DEBUG__
     printf("\nfpga_free: done\n");

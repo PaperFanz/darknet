@@ -14,7 +14,7 @@
 #endif
 
 #define FPGA_ACCEL
-#define __INFINITE_MEM__
+#define __FINAL__
 #include "fpga.h"
 
 #if defined(_MSC_VER)
@@ -2734,7 +2734,7 @@ void gemm_nn_fx(int M, int N, int K, fx_t ALPHA,
             PUT_IN_REGISTER fx_t A_PART = FX_MUL_OPT(ALPHA, FXFP_SCALE, A[i * lda + k]);
             for (j = 0; j < N; ++j) {
             	C[i*ldc + j] += FX_MUL_DOPT(A_PART, 3, B[k*ldb + j], 5);
-	    }
+	        }
         }
     }
 }
@@ -2751,8 +2751,18 @@ void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
     fx_t * a = fp2fxarr(A, M*K);
     fx_t * b = fp2fxarr(B, K*N);
     fx_t * c = fp2fxarr(C, M*N);
-   
-#ifdef __INFINITE_MEM__
+#if defined __FINAL__
+    int i, j, k;
+    fx_t cur_b[MAX_K];
+    for (i = 0; i < M; ++i) {
+        for (j = 0; j < N; j++) {
+            for (k = 0; k < K; k++)
+                cur_b[k] = b[k*ldb+j];
+            fpga_gemm(M, N, K, a+i*lda, lda, cur_b, ldb, c+i*ldc+j, ldc);
+            fpga_read(M, N, K, c+i*N+j);
+        }
+    }
+#elif defined __INFINITE_MEM__
     fpga_gemm(M, N, K, a, lda, b, ldb, c, ldc);
     fpga_read(M, N, K, c);
 #else
