@@ -1,4 +1,5 @@
 #include "fpga.h"
+#include "xgemm_hw.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
@@ -10,27 +11,19 @@
 #include <unistd.h>
 #include <assert.h>
 
-#define __DEBUG__
+//#define __DEBUG__
 
-#define ACCEL_BASE_ADDR (0xa1000000ULL) // to change
-#define A_BASE_ADDR (0xa1000000ULL) // to change
-#define B_BASE_ADDR (0xa1000000ULL) // to change
-#define C_BASE_ADDR (0xa1000000ULL) // to change
+#define ACCEL_BASE_ADDR (0xa0000000ULL) // to change
+#define A_BASE_ADDR (0xb0000000ULL) // to change
+#define B_BASE_ADDR (0xb0008000ULL) // to change
+#define C_BASE_ADDR (0xb0010000ULL) // to change
+
 typedef enum GEMM_CTRL_REG {
-    M_SIZE = 0,
-    N_SIZE,
-    K_SIZE,
-    A_BASE,
-    A_STEP,
-    B_BASE,
-    B_STEP,
-    C_BASE,
-    C_STEP,
-    DATA_RDY,
-    RESET,
-    DEBUG,
-    MAGIC,
-    GEMM_REG_NUM
+	ap_start = 0,
+	ap_done = 1,
+	ap_idle = 2,
+	ap_ready = 3,
+	auto_restart = 7
 } gemm_reg_t;
 
 //#define GEMM_TOT_BYTES  (0x20000000ULL)
@@ -38,13 +31,13 @@ typedef enum GEMM_CTRL_REG {
 #define ACCELMAP_SIZE        (0x1000ULL)
 #define ACCELMAP_MASK        (ACCELMAP_SIZE-1)
 #define ACCELMAP_BLK_WORDS   (ACCELMAP_SIZE>>2)
-#define AMAP_SIZE        (0x1000ULL)
+#define AMAP_SIZE        (0x8000ULL)
 #define AMAP_MASK        (AMAP_SIZE-1)
 #define AMAP_BLK_WORDS   (AMAP_SIZE>>2)
-#define BMAP_SIZE        (0x1000ULL)
+#define BMAP_SIZE        (0x8000ULL)
 #define BMAP_MASK        (BMAP_SIZE-1)
 #define BMAP_BLK_WORDS   (BMAP_SIZE>>2)
-#define CMAP_SIZE        (0x1000ULL)
+#define CMAP_SIZE        (0x8000ULL)
 #define CMAP_MASK        (CMAP_SIZE-1)
 #define CMAP_BLK_WORDS   (CMAP_SIZE>>2)
 
@@ -67,10 +60,25 @@ void sighandler(int signo)
   if(signo==SIGIO)
     {
       det_int++;
+#ifdef __DEBUG__
       printf("\nInterrupt detected\n");
+#endif
     }
   
   return;
+}
+
+int man_memcpy(uint32_t *dst, uint32_t *src, uint32_t num_bytes)
+{
+    int i;
+    for (i = 0; i < num_bytes/4; ++i) {
+        dst[i] = src[i];
+        if (src[i] != dst[i]) {
+            printf("Mismatch at offset %d\n!", i);
+            return -1;
+        }
+    }
+    return 0;
 }
 
 int fpga_init(void)
@@ -82,39 +90,40 @@ int fpga_init(void)
 
     //Open memory as a file
     memfd = open("/dev/mem", O_RDWR|O_SYNC);
-    if(!memfd) {
+    if(memfd < 0) {
         printf("Unable to open /dev/mem.  Ensure it exists (major=1, minor=1)\n");
         fflush(stdout);
         return -1;
     }
 
 #ifdef __DEBUG__
-    printf("fpga_init memfd'd\n");
+    printf("fpga_init memfd'd: %d\n", memfd);
     fflush(stdout);
 #endif
 
     //Map the physical base address to local pointer (in virtual address space)
-    accelptr = (uint32_t *)mmap(NULL, ACCELMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (ACCEL_BASE_ADDR) & ~ACCELMAP_MASK);	
+    //accelptr = (uint32_t *)mmap(NULL, ACCELMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (ACCEL_BASE_ADDR) & ~ACCELMAP_MASK);	
+    accelptr = (uint32_t *)mmap(NULL, ACCELMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (ACCEL_BASE_ADDR));	
     if(accelptr == MAP_FAILED) {
-        printf("accel mapping failed\n");
+        perror("accel mapping failed: ");
         fflush(stdout);
         return -2;
     }
-    aptr = (uint32_t *)mmap(NULL, AMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (A_BASE_ADDR) & ~AMAP_MASK);	
+    aptr = (uint32_t *)mmap(NULL, AMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (A_BASE_ADDR));	
     if(aptr == MAP_FAILED) {
-        printf("a mapping failed\n");
+        perror("a mapping failed: ");
         fflush(stdout);
         return -2;
     }
-    bptr = (uint32_t *)mmap(NULL, BMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (B_BASE_ADDR) & ~BMAP_MASK);	
+    bptr = (uint32_t *)mmap(NULL, BMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (B_BASE_ADDR));	
     if(bptr == MAP_FAILED) {
-        printf("b mapping failed\n");
+        perror("b mapping failed: ");
         fflush(stdout);
         return -2;
     }
     cptr = (uint32_t *)mmap(NULL, CMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (C_BASE_ADDR) & ~CMAP_MASK);	
     if(cptr == MAP_FAILED) {
-        printf("c mapping failed\n");
+        perror("c mapping failed: ");
         fflush(stdout);
         return -2;
     }
@@ -173,6 +182,16 @@ int fpga_init(void)
 bool fpga_ready(void)
 {
     if (init_success) {
+        return accelptr[XGEMM_AXILITES_ADDR_AP_CTRL>>2] & 0x2 ||
+                accelptr[XGEMM_AXILITES_ADDR_AP_CTRL>>2] & 0x4;
+    } else {
+        return false;
+    }
+}
+
+bool fpga_done(void)
+{
+    if (init_success) {
         return det_int;
     } else {
         return false;
@@ -185,7 +204,6 @@ void fpga_gemm(int m, int n, int k,
         fx_t *C, int ldc)
 {
     if (!init_success) return;
-    accelptr[RESET] = 0x01;
     while (!fpga_ready());
 
     int i;
@@ -197,25 +215,26 @@ void fpga_gemm(int m, int n, int k,
 
     int32_t asize = k;
     int32_t bsize = k;
+    accelptr[XGEMM_AXILITES_ADDR_K_DATA>>2] = k;
 
 #ifdef __DEBUG__
     printf("\nfpga_gemm: transferring A\n");
     fflush(stdout);
 #endif
-    memcpy(aptr, A, asize*sizeof(fx_t));
+    man_memcpy(aptr, A, asize*sizeof(fx_t));
 
 #ifdef __DEBUG__
     printf("\nfpga_gemm: transferring B\n");
     fflush(stdout);
 #endif
-    memcpy(bptr, B, bsize*sizeof(fx_t));
+    man_memcpy(bptr, B, bsize*sizeof(fx_t));
     
 #ifdef __DEBUG__
-    printf("\ndone\n");
+    printf("\ndone, starting gemm\n");
     fflush(stdout);
 #endif
 
-    accelptr[DATA_RDY] = 0x01;
+    accelptr[XGEMM_AXILITES_ADDR_AP_CTRL>>2] |= 0x1;
 }
 
 void fpga_read(int m, int n, int k, fx_t* C)
@@ -225,7 +244,8 @@ void fpga_read(int m, int n, int k, fx_t* C)
     printf("\nfpga_read: wait for ready\n");
     fflush(stdout);
 #endif
-    while (!fpga_ready());
+    while (!fpga_done());
+    det_int = 0;
 
     int32_t csize = 1;
 #ifdef __DEBUG__

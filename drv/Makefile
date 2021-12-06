@@ -16,7 +16,7 @@ KFLAGS	= -DDEBUG # -DNO_DTS
 obj-m	= fpga_drv.o
 
 
-all: fpga_drv.ko example
+all: fpga_drv.ko
 
 fpga_drv.ko: fpga_drv.c
 	$(MAKE) ARCH=$(ARCH) CROSS_COMPILE=$(PROC)-$(TYPE)- EXTRA_CFLAGS="$(KFLAGS)" -C $(KDIR) M=$(PWD) modules

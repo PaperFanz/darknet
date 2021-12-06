@@ -39,11 +39,11 @@
                        // Can be found by (GIC IRQ is 121 for this example):
                        //   grep 121 /sys/kernel/irq/*/hwirq
 
-#define FPGA_BASE    0xa0000000    // Base address of the HW accelerator
+#define FPGA_BASE    0xa0010000    // Base address of the HW accelerator
 #endif
 
-#define FPGA_MASK    0x000fffff
-#define FPGA_SIZE    0x00100000
+#define FPGA_MASK    0x000ffff
+#define FPGA_SIZE    0x0010000
 
 #define COMMAND_MASK 0x80000000
 
@@ -392,7 +392,7 @@ static int fpga_drv_remove (struct platform_device *pdev)
 
 #ifdef CONFIG_OF
 static struct of_device_id fpga_drv_of_match[] = {
-        { .compatible = "xlnx,hls-macc-1.0",},
+        { .compatible = "xlnx,gemm-1.0",},
 	{ /* end of list */ },
 };
 MODULE_DEVICE_TABLE(of, fpga_drv_of_match);

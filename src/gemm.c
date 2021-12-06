@@ -15,6 +15,7 @@
 
 #define FPGA_ACCEL
 #define __FINAL__
+#define __DEBUG__
 #include "fpga.h"
 
 #if defined(_MSC_VER)
@@ -2792,6 +2793,9 @@ void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
 #endif
     
     fx2fparr(C, c, M*N);
+#ifdef __DEBUG__
+printf("check first 5 elem of C: %g, %g, %g, %g, %g\n", C[0], C[1], C[2], C[3], C[4]);
+#endif
 }
 #endif
 
