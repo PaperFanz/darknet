@@ -20,7 +20,19 @@ void fpga_gemm(int m, int n, int k,
         fx_t *B, int ldb,
         fx_t *C, int ldc);
 
+void fpga_gemm_block(int m, int n, int k, int s, fx_t *A, fx_t *B, fx_t *C);
+
 void fpga_read(int m, int n, int k, fx_t *C);
+
+void fpga_read_block(int s, fx_t *C);
+
+void fpga_gemm_ablock(int k, int s, fx_t *A);
+
+void fpga_gemm_bblock(int k, int s, fx_t *B);
+
+void fpga_gemm_cblock(int s, fx_t *C);
+
+void fpga_gemm_start(int m, int n, int k, int s);
 
 void fpga_free(void);
 

@@ -1,5 +1,5 @@
 #include "fpga.h"
-#include "xgemm_hw.h"
+#include "xgemm_hw_block.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
@@ -12,11 +12,12 @@
 #include <assert.h>
 
 //#define __DEBUG__
+//#define __DEBUG2__
 
 #define ACCEL_BASE_ADDR (0xa0000000ULL) // to change
 #define A_BASE_ADDR (0xb0000000ULL) // to change
-#define B_BASE_ADDR (0xb0008000ULL) // to change
-#define C_BASE_ADDR (0xb0010000ULL) // to change
+#define B_BASE_ADDR (0xb0040000ULL) // to change
+#define C_BASE_ADDR (0xb0080000ULL) // to change
 
 typedef enum GEMM_CTRL_REG {
 	ap_start = 0,
@@ -31,13 +32,13 @@ typedef enum GEMM_CTRL_REG {
 #define ACCELMAP_SIZE        (0x1000ULL)
 #define ACCELMAP_MASK        (ACCELMAP_SIZE-1)
 #define ACCELMAP_BLK_WORDS   (ACCELMAP_SIZE>>2)
-#define AMAP_SIZE        (0x8000ULL)
+#define AMAP_SIZE        (0x40000ULL)
 #define AMAP_MASK        (AMAP_SIZE-1)
 #define AMAP_BLK_WORDS   (AMAP_SIZE>>2)
-#define BMAP_SIZE        (0x8000ULL)
+#define BMAP_SIZE        (0x40000ULL)
 #define BMAP_MASK        (BMAP_SIZE-1)
 #define BMAP_BLK_WORDS   (BMAP_SIZE>>2)
-#define CMAP_SIZE        (0x8000ULL)
+#define CMAP_SIZE        (0x40000ULL)
 #define CMAP_MASK        (CMAP_SIZE-1)
 #define CMAP_BLK_WORDS   (CMAP_SIZE>>2)
 
@@ -237,6 +238,53 @@ void fpga_gemm(int m, int n, int k,
     accelptr[XGEMM_AXILITES_ADDR_AP_CTRL>>2] |= 0x1;
 }
 
+int num_gemm = 0;
+void fpga_gemm_block(int m, int n, int k, int s, fx_t *A, fx_t *B, fx_t *C)
+{
+    if (!init_success) return;
+    while (!fpga_ready());
+
+    int i;
+
+#ifdef __DEBUG2__
+    printf("\nfpga_gemm %d: transferring arrays\n", num_gemm++);
+    fflush(stdout);
+#endif
+
+    int32_t asize = s*k;
+    int32_t bsize = k*s;
+    int32_t csize = s*s;
+    accelptr[XGEMM_AXILITES_ADDR_M_DATA>>2] = m;
+    accelptr[XGEMM_AXILITES_ADDR_N_DATA>>2] = n;
+    accelptr[XGEMM_AXILITES_ADDR_K_DATA>>2] = k;
+    accelptr[XGEMM_AXILITES_ADDR_S_DATA>>2] = s;
+
+#ifdef __DEBUG__
+    printf("\nfpga_gemm: transferring A\n");
+    fflush(stdout);
+#endif
+    man_memcpy(aptr, A, asize*sizeof(fx_t));
+
+#ifdef __DEBUG__
+    printf("\nfpga_gemm: transferring B\n");
+    fflush(stdout);
+#endif
+    man_memcpy(bptr, B, bsize*sizeof(fx_t));
+    
+#ifdef __DEBUG__
+    printf("\nfpga_gemm: transferring C\n");
+    fflush(stdout);
+#endif
+    man_memcpy(cptr, C, csize*sizeof(fx_t));
+
+#ifdef __DEBUG__
+    printf("\ndone, starting gemm\n");
+    fflush(stdout);
+#endif
+
+    accelptr[XGEMM_AXILITES_ADDR_AP_CTRL>>2] |= 0x1;
+}
+
 void fpga_read(int m, int n, int k, fx_t* C)
 {
     if (!init_success) return;
@@ -257,6 +305,63 @@ void fpga_read(int m, int n, int k, fx_t* C)
     printf("\nfpga_read: done\n");
     fflush(stdout);
 #endif
+}
+
+void fpga_read_block(int s, fx_t* C)
+{
+    if (!init_success) return;
+#ifdef __DEBUG__
+    printf("\nfpga_read: wait for ready\n");
+    fflush(stdout);
+#endif
+    while (!fpga_done());
+    det_int = 0;
+
+    int32_t csize = s*s;
+#ifdef __DEBUG__
+    printf("\nfpga_read: C\n");
+    fflush(stdout);
+#endif
+    man_memcpy(C, cptr, csize*sizeof(fx_t));
+#ifdef __DEBUG__
+    printf("\nfpga_read: done\n");
+    fflush(stdout);
+#endif
+}
+
+void fpga_gemm_ablock(int k, int s, fx_t *A)
+{
+    if (!init_success) return;
+    while (!fpga_ready());
+    int32_t asize = s*k;
+    memcpy(aptr, A, asize*sizeof(fx_t));
+}
+
+void fpga_gemm_bblock(int k, int s, fx_t *B)
+{
+    if (!init_success) return;
+    while (!fpga_ready());
+    int32_t bsize = s*k;
+    memcpy(bptr, B, bsize*sizeof(fx_t));
+}
+
+void fpga_gemm_cblock(int s, fx_t *C)
+{
+    if (!init_success) return;
+    while (!fpga_ready());
+    int32_t csize = s*s;
+    memcpy(cptr, C, csize*sizeof(fx_t));
+}
+
+void fpga_gemm_start(int m, int n, int k, int s)
+{
+    if (!init_success) return;
+    while (!fpga_ready());
+    accelptr[XGEMM_AXILITES_ADDR_M_DATA>>2] = m;
+    accelptr[XGEMM_AXILITES_ADDR_N_DATA>>2] = n;
+    accelptr[XGEMM_AXILITES_ADDR_K_DATA>>2] = k;
+    accelptr[XGEMM_AXILITES_ADDR_S_DATA>>2] = s;
+    accelptr[XGEMM_AXILITES_ADDR_AP_CTRL>>2] |= 0x1;
 }
 
 void fpga_free(void)

@@ -39,7 +39,7 @@
                        // Can be found by (GIC IRQ is 121 for this example):
                        //   grep 121 /sys/kernel/irq/*/hwirq
 
-#define FPGA_BASE    0xa0010000    // Base address of the HW accelerator
+#define FPGA_BASE    0xa0000000    // Base address of the HW accelerator
 #endif
 
 #define FPGA_MASK    0x000ffff

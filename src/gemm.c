@@ -14,8 +14,8 @@
 #endif
 
 #define FPGA_ACCEL
-#define __FINAL__
-#define __DEBUG__
+#define __BLOCK__
+//#define __DEBUG__
 #include "fpga.h"
 
 #if defined(_MSC_VER)
@@ -2741,6 +2741,7 @@ void gemm_nn_fx(int M, int N, int K, fx_t ALPHA,
 }
 
 #ifdef FPGA_ACCEL
+#define S_ 8
 void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
         float *A, int lda,
         float *B, int ldb,
@@ -2752,7 +2753,33 @@ void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
     fx_t * a = fp2fxarr(A, M*K);
     fx_t * b = fp2fxarr(B, K*N);
     fx_t * c = fp2fxarr(C, M*N);
-#if defined __FINAL__
+#if defined __BLOCK__
+    fx_t ctemp[S_*S_];
+    fx_t btemp[S_*MAX_K];
+    int mleft = M, nleft = N, msize, nsize;
+    for (int i = 0; i < M; i += S_, mleft-=S_) {
+        nleft = N;
+        msize = mleft < S_ ? mleft : S_;
+        fpga_gemm_ablock(K, S_, a+i*lda);
+        for (int j = 0; j < N; j += S_, nleft-=S_) {
+            nsize = nleft < S_ ? nleft : S_;
+            int k, l;
+            for (k = 0; k < nsize; ++k) {
+                for (l = 0; l < K; ++l) {
+                    btemp[k*K+l] = b[l*ldb+j+k];
+                }
+            }
+            fpga_gemm_bblock(K, S_, btemp);
+            fpga_gemm_start(M, N, K, S_);
+            fpga_read_block(S_, ctemp);
+            for (k = 0; k < msize; ++k) {
+                for (l = 0; l < nsize; ++l) {
+                    c[(i+k)*ldc+j+l] = ctemp[k*S_+l];
+                }
+            }
+        }
+    }
+#elif defined __BASIC__
     int i, j, k;
     fx_t cur_b[MAX_K];
     for (i = 0; i < M; ++i) {
