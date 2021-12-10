@@ -2708,10 +2708,25 @@ fx_t * fp2fxarr(float* arr, size_t n)
     float temp;
     for (i = 0; i < n; ++i) {
         temp = arr[i];
-	fx[i] = FP2FX(temp);
+	    fx[i] = FP2FX(temp);
     }
     return fx;
 }
+
+fx_t * fp2fxarrT(float *arr, size_t m, size_t n)
+{
+    fx_t * fx = (fx_t *) xcalloc(m*n, sizeof(fx_t));
+    size_t i, j;
+    float temp;
+    for (i = 0; i < m; ++i) {
+        for (j = 0; j < n; ++j) {
+            temp = arr[i*n+j];
+            fx[j*m+i] = FP2FX(temp);
+        }
+    }
+    return fx;
+}
+
 
 void fx2fparr(float* ret, fx_t* arr, size_t n)
 {
@@ -2751,7 +2766,11 @@ void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
     printf("fpga: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
 
     fx_t * a = fp2fxarr(A, M*K);
+#if defined __BLOCK__
+    fx_t * b = fp2fxarrT(B, K, N);
+#else
     fx_t * b = fp2fxarr(B, K*N);
+#endif
     fx_t * c = fp2fxarr(C, M*N);
 #if defined __BLOCK__
     fx_t ctemp[S_*S_];
@@ -2764,12 +2783,13 @@ void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
         for (int j = 0; j < N; j += S_, nleft-=S_) {
             nsize = nleft < S_ ? nleft : S_;
             int k, l;
-            for (k = 0; k < nsize; ++k) {
+            /*for (k = 0; k < nsize; ++k) {
                 for (l = 0; l < K; ++l) {
                     btemp[k*K+l] = b[l*ldb+j+k];
                 }
-            }
-            fpga_gemm_bblock(K, S_, btemp);
+            }*/
+            //fpga_gemm_bblock(K, S_, btemp);
+            fpga_gemm_bblock(K, S_, b+j*lda);
             fpga_gemm_start(M, N, K, S_);
             fpga_read_block(S_, ctemp);
             for (k = 0; k < msize; ++k) {
