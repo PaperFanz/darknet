@@ -1,5 +1,5 @@
 #include "fpga.h"
-#include "xgemm_hw_block.h"
+#include "xgemm_hw_2buf.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
@@ -17,8 +17,10 @@
 
 #define ACCEL_BASE_ADDR (0xa0000000ULL) // to change
 #define A_BASE_ADDR (0xb0000000ULL) // to change
-#define B_BASE_ADDR (0xb0080000ULL) // to change
-#define C_BASE_ADDR (0xb0100000ULL) // to change
+#define B0_BASE_ADDR (0xb0040000ULL) // to change
+#define C0_BASE_ADDR (0xb0080000ULL) // to change
+#define B1_BASE_ADDR (0xb0060000ULL) // to change
+#define C1_BASE_ADDR (0xb0100000ULL) // to change
 
 typedef enum GEMM_CTRL_REG {
 	ap_start = 0,
@@ -39,7 +41,7 @@ typedef enum GEMM_CTRL_REG {
 #define BMAP_SIZE        (0x20000ULL)
 #define BMAP_MASK        (BMAP_SIZE-1)
 #define BMAP_BLK_WORDS   (BMAP_SIZE>>2)
-#define CMAP_SIZE        (0x20000ULL)
+#define CMAP_SIZE        (0x10000ULL)
 #define CMAP_MASK        (CMAP_SIZE-1)
 #define CMAP_BLK_WORDS   (CMAP_SIZE>>2)
 
@@ -47,8 +49,10 @@ typedef enum GEMM_CTRL_REG {
 volatile int memfd = 0;
 volatile uint32_t* accelptr = NULL;
 volatile fx_t* aptr = NULL;
-volatile fx_t* bptr = NULL;
-volatile fx_c_t* cptr = NULL;
+volatile fx_t* b0ptr = NULL;
+volatile fx_t* b1ptr = NULL;
+volatile fx_c_t* c0ptr = NULL;
+volatile fx_c_t* c1ptr = NULL;
 volatile bool init_success = false;
 
 /* interrupt stuff */
@@ -117,14 +121,26 @@ int fpga_init(void)
         fflush(stdout);
         return -2;
     }
-    bptr = (fx_t *)mmap(NULL, BMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (B_BASE_ADDR));	
-    if(bptr == MAP_FAILED) {
+    b0ptr = (fx_t *)mmap(NULL, BMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (B0_BASE_ADDR));	
+    if(b0ptr == MAP_FAILED) {
         perror("b mapping failed: ");
         fflush(stdout);
         return -2;
     }
-    cptr = (fx_c_t *)mmap(NULL, CMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (C_BASE_ADDR));	
-    if(cptr == MAP_FAILED) {
+    c0ptr = (fx_c_t *)mmap(NULL, CMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (C0_BASE_ADDR));	
+    if(c0ptr == MAP_FAILED) {
+        perror("c mapping failed: ");
+        fflush(stdout);
+        return -2;
+    }
+    b1ptr = (fx_t *)mmap(NULL, BMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (B1_BASE_ADDR));	
+    if(b1ptr == MAP_FAILED) {
+        perror("b mapping failed: ");
+        fflush(stdout);
+        return -2;
+    }
+    c1ptr = (fx_c_t *)mmap(NULL, CMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (C1_BASE_ADDR));	
+    if(c1ptr == MAP_FAILED) {
         perror("c mapping failed: ");
         fflush(stdout);
         return -2;
@@ -229,7 +245,7 @@ void fpga_gemm(int m, int n, int k,
     printf("\nfpga_gemm: transferring B\n");
     fflush(stdout);
 #endif
-    man_memcpy(bptr, B, bsize*sizeof(fx_t));
+    // man_memcpy(bptr, B, bsize*sizeof(fx_t));
     
 #ifdef __DEBUG__
     printf("\ndone, starting gemm\n");
@@ -258,7 +274,6 @@ void fpga_gemm_block(int m, int n, int k, int s, fx_t *A, fx_t *B, fx_t *C)
     accelptr[XGEMM_AXILITES_ADDR_M_DATA>>2] = m;
     accelptr[XGEMM_AXILITES_ADDR_N_DATA>>2] = n;
     accelptr[XGEMM_AXILITES_ADDR_K_DATA>>2] = k;
-    accelptr[XGEMM_AXILITES_ADDR_S_DATA>>2] = s;
 
 #ifdef __DEBUG__
     printf("\nfpga_gemm: transferring A\n");
@@ -270,13 +285,13 @@ void fpga_gemm_block(int m, int n, int k, int s, fx_t *A, fx_t *B, fx_t *C)
     printf("\nfpga_gemm: transferring B\n");
     fflush(stdout);
 #endif
-    man_memcpy(bptr, B, bsize*sizeof(fx_t));
+    // man_memcpy(bptr, B, bsize*sizeof(fx_t));
     
 #ifdef __DEBUG__
     printf("\nfpga_gemm: transferring C\n");
     fflush(stdout);
 #endif
-    man_memcpy(cptr, C, csize*sizeof(fx_t));
+    // man_memcpy(cptr, C, csize*sizeof(fx_t));
 
 #ifdef __DEBUG__
     printf("\ndone, starting gemm\n");
@@ -301,14 +316,14 @@ void fpga_read(int m, int n, int k, fx_t* C)
     printf("\nfpga_read: C\n");
     fflush(stdout);
 #endif
-    memcpy(C, cptr, csize*sizeof(fx_t));
+    // memcpy(C, cptr, csize*sizeof(fx_t));
 #ifdef __DEBUG__
     printf("\nfpga_read: done\n");
     fflush(stdout);
 #endif
 }
 
-void fpga_read_block(int m, int n, fx_c_t* C)
+void fpga_read_block(int m, int n, fx_c_t* C, int port)
 {
     if (!init_success) return;
 #ifdef __DEBUG__
@@ -319,6 +334,7 @@ void fpga_read_block(int m, int n, fx_c_t* C)
     det_int = 0;
 
     int32_t csize = m*n;
+    fx_c_t* cptr = port ? c1ptr : c0ptr;
 #ifdef __DEBUG__
     printf("\nfpga_read: C\n");
     fflush(stdout);
@@ -338,11 +354,12 @@ void fpga_gemm_ablock(int k, int s, fx_t *A)
     memcpy(aptr, A, asize*sizeof(fx_t));
 }
 
-void fpga_gemm_bblock(int k, int s, fx_t *B)
+void fpga_gemm_bblock(int k, int s, fx_t *B, int port)
 {
     if (!init_success) return;
     while (!fpga_ready());
     int32_t bsize = s*k;
+    fx_c_t* bptr = port ? b1ptr : b0ptr;
     memcpy(bptr, B, bsize*sizeof(fx_t));
 }
 
@@ -351,19 +368,17 @@ void fpga_gemm_cblock(int m, int n, fx_c_t *C)
     if (!init_success) return;
     while (!fpga_ready());
     int32_t csize = m*n;
-    memcpy(cptr, C, csize*sizeof(fx_c_t));
+    memcpy(c0ptr, C, csize*sizeof(fx_c_t));
 }
 
-void fpga_gemm_start(int m, int n, int k, int s)
+void fpga_gemm_start(int m, int n, int k, int port)
 {
     if (!init_success) return;
     while (!fpga_ready());
     accelptr[XGEMM_AXILITES_ADDR_M_DATA>>2] = m;
     accelptr[XGEMM_AXILITES_ADDR_N_DATA>>2] = n;
     accelptr[XGEMM_AXILITES_ADDR_K_DATA>>2] = k;
-#ifdef __BLOCK__
-    accelptr[XGEMM_AXILITES_ADDR_S_DATA>>2] = s;
-#endif
+    accelptr[XGEMM_AXILITES_ADDR_BUF_R_DATA>>2] = port;
     accelptr[XGEMM_AXILITES_ADDR_AP_CTRL>>2] |= 0x1;
 }
 
@@ -377,8 +392,10 @@ void fpga_free(void)
     init_success = false;
     munmap((void *) accelptr, ACCELMAP_SIZE);
     munmap((void *) aptr, AMAP_SIZE);
-    munmap((void *) bptr, BMAP_SIZE);
-    munmap((void *) cptr, CMAP_SIZE);
+    munmap((void *) b0ptr, BMAP_SIZE);
+    munmap((void *) c0ptr, CMAP_SIZE);
+    munmap((void *) b1ptr, BMAP_SIZE);
+    munmap((void *) c1ptr, CMAP_SIZE);
     close(memfd);
 #ifdef __DEBUG__
     printf("\nfpga_free: done\n");

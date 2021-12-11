@@ -2852,7 +2852,7 @@ void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
         float BETA,
         float *C, int ldc)
 {
-    //printf("fpga: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
+    printf("fpga: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
 
 
     int K_pad = K % 2 ? K+1 : K;
@@ -2876,9 +2876,9 @@ void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
         for (int j = 0; j < N; j += C_, nleft-=C_) {
             nsize = nleft < C_ ? nleft : C_;
             int k, l;
-            fpga_gemm_bblock(K_pad, C_, b+j*K_pad);
-	    fpga_gemm_start(M, N, K_pad, S_);
-            fpga_read_block(R_, C_, ctemp);
+            fpga_gemm_bblock(K_pad, C_, b+j*K_pad, 0);
+	    fpga_gemm_start(M, N, K_pad, 0);
+            fpga_read_block(R_, C_, ctemp, 0);
             for (k = 0; k < msize; ++k) {
                 for (l = 0; l < nsize; ++l) {
                     c[(i+k)*ldc+j+l] = ctemp[k*C_+l];
