@@ -2852,8 +2852,9 @@ void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
         float BETA,
         float *C, int ldc)
 {
+#ifdef __DEBUG__
     printf("fpga: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
-
+#endif
 
     int K_pad = K % 2 ? K+1 : K;
     fx_t *a, *b;
@@ -2868,34 +2869,59 @@ void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
     fx_c_t * c = (fx_c_t *) xcalloc(M*N, sizeof(fx_c_t));
     
     fx_c_t ctemp[R_*C_];
-    int mleft = M, nleft = N, msize, nsize;
+    int mleft = M, nleft = N, msize = R_, nsize = C_, port = 0;
     for (int i = 0; i < M; i += R_, mleft-=R_) {
+        int k, l;
         nleft = N;
         msize = mleft < R_ ? mleft : R_;
         fpga_gemm_ablock(K_pad, R_, a+i*K_pad);
-        for (int j = 0; j < N; j += C_, nleft-=C_) {
-            nsize = nleft < C_ ? nleft : C_;
-            int k, l;
-            fpga_gemm_bblock(K_pad, C_, b+j*K_pad, 0);
-	    fpga_gemm_start(M, N, K_pad, 0);
-            fpga_read_block(R_, C_, ctemp, 0);
+        port = 0;
+        fpga_gemm_bblock(K_pad, C_, b, port);
+        fpga_gemm_start(M, N, K_pad, port);
+        nsize = nleft < C_ ? nleft : C_;
+        nleft-=C_;
+        for (int j = C_; j < N; j += C_, nleft-=C_) {
+            fpga_gemm_bblock(K_pad, C_, b+j*K_pad, (port+1)%2);
+	    //while(!fpga_done() && !fpga_ready());
+            while(!fpga_ready());
+            fpga_read_block(R_, C_, ctemp, port);
+            fpga_gemm_start(M, N, K_pad, (port+1)%2);
             for (k = 0; k < msize; ++k) {
                 for (l = 0; l < nsize; ++l) {
-                    c[(i+k)*ldc+j+l] = ctemp[k*C_+l];
+                    c[(i+k)*ldc+(j-nsize)+l] = ctemp[k*C_+l];
 		}
+            }
+            //printf("Finished reading results from port %d, started other one: %d, %d\n", port, i, j);
+            port = (port+1)%2;
+            nsize = nleft < C_ ? nleft : C_;
+        }
+	//while(!fpga_done() && !fpga_ready());
+        while(!fpga_ready());
+        // read last block
+        //printf("Reading last block on port %d: %d, %d, %d\n", port, i, N-nsize, nsize);
+        fpga_read_block(R_, C_, ctemp, port);
+        for (k = 0; k < msize; ++k) {
+            for (l = 0; l < nsize; ++l) {
+                c[(i+k)*ldc+(N-nsize)+l] = ctemp[k*C_+l];
             }
         }
     }
 
 #ifdef __DEBUG__
-printf("check elem of c: %d, %d, %d, %d, %d\n", c[8], c[9], c[10], c[0], c[1]);
+printf("check elem of c: %d, %d, %d, %d, %d\n", c[8], c[16], c[24], c[32], c[40]);
 #endif
     free(a);
     free(b); 
     fx2fparr_c(C, c, M*N);
 #ifdef __DEBUG__
-printf("check elem of C: %g, %g, %g, %g, %g\n\n", C[8], C[9], C[10], C[0], C[1]);
+    static bool hack = false;
+if (hack)
+    printf("check elem of 2nd2last C: %g %g, %g, %g, %g, %g\n\n", C[N-1+16*ldc], C[N-8+16*ldc], C[N-16+16*ldc], C[N-24+16*ldc], C[N-32+16*ldc], C[N-40+16*ldc]);
+else
+    printf("check elem of last C: %g %g, %g, %g, %g, %g\n\n", C[N-1], C[N-8], C[N-16], C[N-24], C[N-32], C[N-40]);
+    hack = true;
 #endif
+//exit(1);
 }
 #endif
 /*** ---End--- ***/

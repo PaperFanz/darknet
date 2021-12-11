@@ -24,6 +24,8 @@ int fpga_init(void);
 
 bool fpga_ready(void);
 
+bool fpga_done(void);
+
 void fpga_gemm(int m, int n, int k,
         fx_t *A, int lda,
         fx_t *B, int ldb,

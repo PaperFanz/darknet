@@ -12,6 +12,7 @@
 #include <assert.h>
 #include <string.h>
 
+#undef __DEBUG__
 //#define __DEBUG__
 //#define __DEBUG2__
 
@@ -60,6 +61,7 @@ volatile bool init_success = false;
 #define WRITE_CMD (0x1 << 31)
 volatile int det_int = 0;
 
+
 // signal handler for receiving events from hardware driver
 void sighandler(int signo)
 {
@@ -67,7 +69,7 @@ void sighandler(int signo)
     {
       det_int++;
 #ifdef __DEBUG__
-      printf("\nInterrupt detected\n");
+      printf("\nInterrupt detected: %d\n", det_int);
 #endif
     }
   
@@ -158,7 +160,7 @@ int fpga_init(void)
 //    }
 
     // Setup interrupt
-    unsigned long volatile gie, iie;
+    /*unsigned long volatile gie, iie;
     struct sigaction action;
     int fd;
     // install signal handler
@@ -187,7 +189,7 @@ int fpga_init(void)
     ioctl(fd, WRITE_CMD + 0x1, &gie);
 
     iie = 0x1;
-    ioctl(fd, WRITE_CMD + 0x2, &iie);
+    ioctl(fd, WRITE_CMD + 0x2, &iie);*/
 
     init_success = true;
 #ifdef __DEBUG__
@@ -200,8 +202,10 @@ int fpga_init(void)
 bool fpga_ready(void)
 {
     if (init_success) {
-        return accelptr[XGEMM_AXILITES_ADDR_AP_CTRL>>2] & 0x2 ||
-                accelptr[XGEMM_AXILITES_ADDR_AP_CTRL>>2] & 0x4;
+        //return accelptr[XGEMM_AXILITES_ADDR_AP_CTRL>>2] & 0x2 ||
+        //        accelptr[XGEMM_AXILITES_ADDR_AP_CTRL>>2] & 0x4;
+        //printf("Status: 0x%x, idle: %d\n", accelptr[XGEMM_AXILITES_ADDR_AP_CTRL>>2], accelptr[XGEMM_AXILITES_ADDR_AP_CTRL>>2]>>ap_idle);
+        return accelptr[XGEMM_AXILITES_ADDR_AP_CTRL>>2] >> ap_idle;
     } else {
         return false;
     }
@@ -308,7 +312,7 @@ void fpga_read(int m, int n, int k, fx_t* C)
     printf("\nfpga_read: wait for ready\n");
     fflush(stdout);
 #endif
-    while (!fpga_done());
+    //while (!fpga_done());
     det_int = 0;
 
     int32_t csize = 1;
@@ -327,21 +331,25 @@ void fpga_read_block(int m, int n, fx_c_t* C, int port)
 {
     if (!init_success) return;
 #ifdef __DEBUG__
-    printf("\nfpga_read: wait for ready\n");
+    printf("\nfpga_read_block: wait for ready\n");
     fflush(stdout);
 #endif
-    while (!fpga_done());
-    det_int = 0;
+    //while (!fpga_done());
+    /*while (!fpga_done()) {
+        printf("No interrupt\n");
+    }*/
+    det_int = det_int ? det_int-1 : 0;
+    //det_int = 0;
 
     int32_t csize = m*n;
     fx_c_t* cptr = port ? c1ptr : c0ptr;
 #ifdef __DEBUG__
-    printf("\nfpga_read: C\n");
+    printf("\nfpga_read_block: C\n");
     fflush(stdout);
 #endif
     memcpy(C, cptr, csize*sizeof(fx_c_t));
 #ifdef __DEBUG__
-    printf("\nfpga_read: done\n");
+    printf("\nfpga_read_block: done\n");
     fflush(stdout);
 #endif
 }
@@ -357,9 +365,9 @@ void fpga_gemm_ablock(int k, int s, fx_t *A)
 void fpga_gemm_bblock(int k, int s, fx_t *B, int port)
 {
     if (!init_success) return;
-    while (!fpga_ready());
+    //while (!fpga_ready());
     int32_t bsize = s*k;
-    fx_c_t* bptr = port ? b1ptr : b0ptr;
+    fx_t* bptr = port ? b1ptr : b0ptr;
     memcpy(bptr, B, bsize*sizeof(fx_t));
 }
 
@@ -374,7 +382,13 @@ void fpga_gemm_cblock(int m, int n, fx_c_t *C)
 void fpga_gemm_start(int m, int n, int k, int port)
 {
     if (!init_success) return;
-    while (!fpga_ready());
+#ifdef __DEBUG__
+    printf("\nfpga_gemm_start: wait device idle\n");
+#endif
+    //while (!fpga_ready());
+#ifdef __DEBUG__
+    printf("\nfpga_gemm_start: done wait\n");
+#endif
     accelptr[XGEMM_AXILITES_ADDR_M_DATA>>2] = m;
     accelptr[XGEMM_AXILITES_ADDR_N_DATA>>2] = n;
     accelptr[XGEMM_AXILITES_ADDR_K_DATA>>2] = k;
