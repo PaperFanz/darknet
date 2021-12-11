@@ -14,9 +14,9 @@
 #endif
 
 #define FPGA_ACCEL
-#define __BLOCK__
 //#define __DEBUG__
 #include "fpga.h"
+#include <unistd.h>
 
 #if defined(_MSC_VER)
 #if defined(_M_ARM) || defined(_M_ARM64)
@@ -2713,6 +2713,18 @@ fx_t * fp2fxarr(float* arr, size_t n)
     return fx;
 }
 
+fx_c_t * fp2fxarr_c(float* arr, size_t n)
+{
+    fx_c_t * fx = (fx_c_t *) xcalloc(n, sizeof(fx_c_t));
+    size_t i;
+    float temp;
+    for (i = 0; i < n; ++i) {
+        temp = arr[i];
+	    fx[i] = FP2FX(temp);
+    }
+    return fx;
+}
+
 fx_t * fp2fxarrT(float *arr, size_t m, size_t n)
 {
     fx_t * fx = (fx_t *) xcalloc(m*n, sizeof(fx_t));
@@ -2727,6 +2739,55 @@ fx_t * fp2fxarrT(float *arr, size_t m, size_t n)
     return fx;
 }
 
+fx_t * fp2fxarr_pad(float* arr, size_t m, size_t n, size_t pad)
+{
+    int size = m*n;
+    fx_t * fx = (fx_t *) xcalloc(size+n*pad, sizeof(fx_t));
+    size_t i, j;
+    float temp;
+
+    for (i = 0, j = 0; i < size+n*pad; ++i) {
+        if (pad && ((i+1) % (n+pad)) == 0) {
+	    fx[i] = 0;
+	} else {
+            temp = arr[j++];
+	    fx[i] = FP2FX(temp);
+	}
+	//fx[i] = 1;
+    }
+    //for (i = size; i < size+n*pad; ++i) {
+    //    fx[i] = 0;
+    //}
+
+    return fx;
+}
+
+fx_t * fp2fxarrT_pad(float *arr, size_t m, size_t n, size_t pad)
+{
+    int size = m*n;
+    fx_t * fx = (fx_t *) xcalloc(size+m*pad, sizeof(fx_t));
+    size_t i, j;
+    float temp;
+    /*for (i = 0; i < size+m*pad; ++i) {
+	fx[i] = 1;
+    }*/
+    for (i = 0; i < m; ++i) {
+        for (j = 0; j < n; ++j) {
+            temp = arr[i*n+j];
+            fx[j*(m+pad)+i] = FP2FX(temp);
+        }
+    }
+    if (pad) {
+	    for (j = 0; j < n; ++j) {
+		    fx[j*(m+pad)+m] = 0;
+	    }
+    }
+
+    //for (i = 0; i < m; ++i) {
+    //    fx[j*m+i] = 0;
+    //}
+    return fx;
+}
 
 void fx2fparr(float* ret, fx_t* arr, size_t n)
 {
@@ -2735,6 +2796,18 @@ void fx2fparr(float* ret, fx_t* arr, size_t n)
     for (i = 0; i < n; ++i) {
         temp = arr[i];
 		ret[i] = FX2FP(temp);
+    }
+    free(arr);
+}
+
+void fx2fparr_c(float* ret, fx_c_t* arr, size_t n)
+{
+    size_t i;
+	fx_c_t temp;
+    for (i = 0; i < n; ++i) {
+        //temp = arr[i] >> FXFP_SCALE;
+	temp = arr[i];	
+    	    ret[i] = FX2FP(temp);
     }
     free(arr);
 }
@@ -2755,97 +2828,76 @@ void gemm_nn_fx(int M, int N, int K, fx_t ALPHA,
     }
 }
 
+float * transpose(float *arr, size_t m, size_t n)
+{
+    float * fx = (float *) xcalloc(m*n, sizeof(float));
+    size_t i, j;
+    float temp;
+    for (i = 0; i < m; ++i) {
+        for (j = 0; j < n; ++j) {
+            temp = arr[i*n+j];
+            fx[j*m+i] = temp;
+        }
+    }
+    return fx;
+}
+
 #ifdef FPGA_ACCEL
 #define S_ 8
+#define R_ 16
+#define C_ 8
 void gemm_fpga(int TA, int TB, int M, int N, int K, float ALPHA,
         float *A, int lda,
         float *B, int ldb,
         float BETA,
         float *C, int ldc)
 {
-    printf("fpga: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
+    //printf("fpga: %d %d %d %d %d %f %d %d %f %d\n",TA, TB, M, N, K, ALPHA, lda, ldb, BETA, ldc);
 
-    fx_t * a = fp2fxarr(A, M*K);
-#if defined __BLOCK__
-    fx_t * b = fp2fxarrT(B, K, N);
-#else
-    fx_t * b = fp2fxarr(B, K*N);
-#endif
-    fx_t * c = fp2fxarr(C, M*N);
-#if defined __BLOCK__
-    fx_t ctemp[S_*S_];
-    fx_t btemp[S_*MAX_K];
+
+    int K_pad = K % 2 ? K+1 : K;
+    fx_t *a, *b;
+    float *bt;
+    if (K % 2) {
+	    a = fp2fxarr_pad(A, M, K, K_pad-K);
+	    b = fp2fxarrT_pad(B, K, N, K_pad-K);
+    } else {
+	    a = fp2fxarr(A, M*K);
+	    b = fp2fxarrT(B, K, N);
+    }
+    fx_c_t * c = (fx_c_t *) xcalloc(M*N, sizeof(fx_c_t));
+    
+    fx_c_t ctemp[R_*C_];
     int mleft = M, nleft = N, msize, nsize;
-    for (int i = 0; i < M; i += S_, mleft-=S_) {
+    for (int i = 0; i < M; i += R_, mleft-=R_) {
         nleft = N;
-        msize = mleft < S_ ? mleft : S_;
-        fpga_gemm_ablock(K, S_, a+i*lda);
-        for (int j = 0; j < N; j += S_, nleft-=S_) {
-            nsize = nleft < S_ ? nleft : S_;
+        msize = mleft < R_ ? mleft : R_;
+        fpga_gemm_ablock(K_pad, R_, a+i*K_pad);
+        for (int j = 0; j < N; j += C_, nleft-=C_) {
+            nsize = nleft < C_ ? nleft : C_;
             int k, l;
-            /*for (k = 0; k < nsize; ++k) {
-                for (l = 0; l < K; ++l) {
-                    btemp[k*K+l] = b[l*ldb+j+k];
-                }
-            }*/
-            //fpga_gemm_bblock(K, S_, btemp);
-            fpga_gemm_bblock(K, S_, b+j*lda);
-            fpga_gemm_start(M, N, K, S_);
-            fpga_read_block(S_, ctemp);
+            fpga_gemm_bblock(K_pad, C_, b+j*K_pad);
+	    fpga_gemm_start(M, N, K_pad, S_);
+            fpga_read_block(R_, C_, ctemp);
             for (k = 0; k < msize; ++k) {
                 for (l = 0; l < nsize; ++l) {
-                    c[(i+k)*ldc+j+l] = ctemp[k*S_+l];
-                }
+                    c[(i+k)*ldc+j+l] = ctemp[k*C_+l];
+		}
             }
         }
     }
-#elif defined __BASIC__
-    int i, j, k;
-    fx_t cur_b[MAX_K];
-    for (i = 0; i < M; ++i) {
-        for (j = 0; j < N; j++) {
-            for (k = 0; k < K; k++)
-                cur_b[k] = b[k*ldb+j];
-            fpga_gemm(M, N, K, a+i*lda, lda, cur_b, ldb, c+i*ldc+j, ldc);
-            fpga_read(M, N, K, c+i*N+j);
-        }
-    }
-#elif defined __INFINITE_MEM__
-    fpga_gemm(M, N, K, a, lda, b, ldb, c, ldc);
-    fpga_read(M, N, K, c);
-#else
-    int m, n, nleft, k, kleft;
-    int kstep = K;
-    int nstep = 1024;
-    for (m = 0; m < M; ++m) {
-        kleft = K;
-        for (k = 0; k < K; k+=kstep, kleft-=kstep) {
-            nleft = N;
-            for (n = 0; n < N; n+=nstep, nleft-=nstep) {
-                fpga_gemm(1, 
-                        (nleft > nstep ? nstep : nleft), 
-                        (kleft > kstep ? kstep : kleft), 
-                        a + m*lda + k, lda, 
-                        b + k*ldb + n, ldb, 
-                        c + m*ldc + n, ldc);
-                /*
-                fpga_read(1, 
-                        (nleft > nstep ? nstep : nleft), 
-                        (kleft > kstep ? kstep : kleft), 
-                        c + m*ldc + n);
-                */
-            }
-        }
-    }
-#endif
-    
-    fx2fparr(C, c, M*N);
+
 #ifdef __DEBUG__
-printf("check first 5 elem of C: %g, %g, %g, %g, %g\n", C[0], C[1], C[2], C[3], C[4]);
+printf("check elem of c: %d, %d, %d, %d, %d\n", c[8], c[9], c[10], c[0], c[1]);
+#endif
+    free(a);
+    free(b); 
+    fx2fparr_c(C, c, M*N);
+#ifdef __DEBUG__
+printf("check elem of C: %g, %g, %g, %g, %g\n\n", C[8], C[9], C[10], C[0], C[1]);
 #endif
 }
 #endif
-
 /*** ---End--- ***/
 
 // #define CACHE_OPT

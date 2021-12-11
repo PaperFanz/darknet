@@ -10,14 +10,15 @@
 #include <signal.h>
 #include <unistd.h>
 #include <assert.h>
+#include <string.h>
 
 //#define __DEBUG__
 //#define __DEBUG2__
 
 #define ACCEL_BASE_ADDR (0xa0000000ULL) // to change
 #define A_BASE_ADDR (0xb0000000ULL) // to change
-#define B_BASE_ADDR (0xb0040000ULL) // to change
-#define C_BASE_ADDR (0xb0080000ULL) // to change
+#define B_BASE_ADDR (0xb0080000ULL) // to change
+#define C_BASE_ADDR (0xb0100000ULL) // to change
 
 typedef enum GEMM_CTRL_REG {
 	ap_start = 0,
@@ -35,19 +36,19 @@ typedef enum GEMM_CTRL_REG {
 #define AMAP_SIZE        (0x40000ULL)
 #define AMAP_MASK        (AMAP_SIZE-1)
 #define AMAP_BLK_WORDS   (AMAP_SIZE>>2)
-#define BMAP_SIZE        (0x40000ULL)
+#define BMAP_SIZE        (0x20000ULL)
 #define BMAP_MASK        (BMAP_SIZE-1)
 #define BMAP_BLK_WORDS   (BMAP_SIZE>>2)
-#define CMAP_SIZE        (0x40000ULL)
+#define CMAP_SIZE        (0x20000ULL)
 #define CMAP_MASK        (CMAP_SIZE-1)
 #define CMAP_BLK_WORDS   (CMAP_SIZE>>2)
 
 /* global memmap for fpga accesses */
 volatile int memfd = 0;
 volatile uint32_t* accelptr = NULL;
-volatile uint32_t* aptr = NULL;
-volatile uint32_t* bptr = NULL;
-volatile uint32_t* cptr = NULL;
+volatile fx_t* aptr = NULL;
+volatile fx_t* bptr = NULL;
+volatile fx_c_t* cptr = NULL;
 volatile bool init_success = false;
 
 /* interrupt stuff */
@@ -75,7 +76,7 @@ int man_memcpy(uint32_t *dst, uint32_t *src, uint32_t num_bytes)
     for (i = 0; i < num_bytes/4; ++i) {
         dst[i] = src[i];
         if (src[i] != dst[i]) {
-            printf("Mismatch at offset %d\n!", i);
+            printf("Mismatch at offset %d! dst=0x%x, src=0x%x\n", i, dst[i], src[i]);
             return -1;
         }
     }
@@ -110,19 +111,19 @@ int fpga_init(void)
         fflush(stdout);
         return -2;
     }
-    aptr = (uint32_t *)mmap(NULL, AMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (A_BASE_ADDR));	
+    aptr = (fx_t *)mmap(NULL, AMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (A_BASE_ADDR));	
     if(aptr == MAP_FAILED) {
         perror("a mapping failed: ");
         fflush(stdout);
         return -2;
     }
-    bptr = (uint32_t *)mmap(NULL, BMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (B_BASE_ADDR));	
+    bptr = (fx_t *)mmap(NULL, BMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (B_BASE_ADDR));	
     if(bptr == MAP_FAILED) {
         perror("b mapping failed: ");
         fflush(stdout);
         return -2;
     }
-    cptr = (uint32_t *)mmap(NULL, CMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (C_BASE_ADDR) & ~CMAP_MASK);	
+    cptr = (fx_c_t *)mmap(NULL, CMAP_SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, memfd, (C_BASE_ADDR));	
     if(cptr == MAP_FAILED) {
         perror("c mapping failed: ");
         fflush(stdout);
@@ -307,7 +308,7 @@ void fpga_read(int m, int n, int k, fx_t* C)
 #endif
 }
 
-void fpga_read_block(int s, fx_t* C)
+void fpga_read_block(int m, int n, fx_c_t* C)
 {
     if (!init_success) return;
 #ifdef __DEBUG__
@@ -317,12 +318,12 @@ void fpga_read_block(int s, fx_t* C)
     while (!fpga_done());
     det_int = 0;
 
-    int32_t csize = s*s;
+    int32_t csize = m*n;
 #ifdef __DEBUG__
     printf("\nfpga_read: C\n");
     fflush(stdout);
 #endif
-    man_memcpy(C, cptr, csize*sizeof(fx_t));
+    memcpy(C, cptr, csize*sizeof(fx_c_t));
 #ifdef __DEBUG__
     printf("\nfpga_read: done\n");
     fflush(stdout);
@@ -345,12 +346,12 @@ void fpga_gemm_bblock(int k, int s, fx_t *B)
     memcpy(bptr, B, bsize*sizeof(fx_t));
 }
 
-void fpga_gemm_cblock(int s, fx_t *C)
+void fpga_gemm_cblock(int m, int n, fx_c_t *C)
 {
     if (!init_success) return;
     while (!fpga_ready());
-    int32_t csize = s*s;
-    memcpy(cptr, C, csize*sizeof(fx_t));
+    int32_t csize = m*n;
+    memcpy(cptr, C, csize*sizeof(fx_c_t));
 }
 
 void fpga_gemm_start(int m, int n, int k, int s)
@@ -360,7 +361,9 @@ void fpga_gemm_start(int m, int n, int k, int s)
     accelptr[XGEMM_AXILITES_ADDR_M_DATA>>2] = m;
     accelptr[XGEMM_AXILITES_ADDR_N_DATA>>2] = n;
     accelptr[XGEMM_AXILITES_ADDR_K_DATA>>2] = k;
+#ifdef __BLOCK__
     accelptr[XGEMM_AXILITES_ADDR_S_DATA>>2] = s;
+#endif
     accelptr[XGEMM_AXILITES_ADDR_AP_CTRL>>2] |= 0x1;
 }
 
