@@ -10,7 +10,7 @@ Set `ARM_CC=1` to build for ARM, `0` to build for x86.
 Set `PG=1` to add `-pg` to the compile flags;
 
 Finally, `make clean` and `make` will build the repository. The `darknet` binary can then be run using the same commands as the unmodified version from AlexeyAB.
-
+You can execute run_darknet.sh for convenience as well.
 ---
 
 # Yolo v4, v3 and v2 for Windows and Linux
